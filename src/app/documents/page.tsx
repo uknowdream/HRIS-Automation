@@ -30,6 +30,7 @@ export default function DocumentsAndESignPage() {
   const isId = locale === "id";
 
   const [signingDoc, setSigningDoc] = useState<HRDocument | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<HRDocument | null>(null);
   const [signerName, setSignerName] = useState("Nadia Kusuma (VP People)");
   const [hasDrawn, setHasDrawn] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -233,10 +234,10 @@ export default function DocumentsAndESignPage() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => window.print()}
+                      onClick={() => setViewingDoc(doc)}
                       className="px-3 py-1.5 rounded-lg hr-btn-secondary text-[11px] font-semibold inline-flex items-center gap-1"
                     >
-                      <Printer className="w-3 h-3" /> Print PDF
+                      <Printer className="w-3 h-3" /> View Signed PDF
                     </button>
                   )}
                 </td>
@@ -372,6 +373,75 @@ export default function DocumentsAndESignPage() {
               >
                 <ShieldCheck className="w-4 h-4" />
                 {isId ? "Sahkan & Segel SHA-256" : "Sign & Seal SHA-256"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signed Legal Contract Viewer Modal */}
+      {viewingDoc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setViewingDoc(null)}
+        >
+          <div className="w-full max-w-2xl hr-card rounded-2xl p-6 sm:p-8 space-y-5 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between border-b pb-4" style={{ borderColor: "var(--border-subtle)" }}>
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 dark:text-cyan-400">
+                  AetherHR Global Technologies · Executed Legal Document
+                </div>
+                <h3 className="text-lg font-black mt-1">{viewingDoc.title}</h3>
+                <p className="text-xs hr-muted">
+                  {viewingDoc.docType} · Party: {viewingDoc.employeeName} ({viewingDoc.department})
+                </p>
+              </div>
+              <button onClick={() => setViewingDoc(null)} className="no-print"><X className="w-5 h-5 hr-muted" /></button>
+            </div>
+
+            <div className="space-y-3 text-xs leading-relaxed hr-muted">
+              <p>
+                This Employment & Confidentiality Agreement is executed electronically between <strong>AetherHR Global Technologies</strong> and <strong>{viewingDoc.employeeName}</strong> effective <strong>{viewingDoc.issueDate}</strong>{viewingDoc.expiryDate ? ` through ${viewingDoc.expiryDate}` : " on a permanent basis"}.
+              </p>
+              <p>
+                Both parties affirm compliance with applicable international labor standards, data protection (UU PDP / GDPR), intellectual property confidentiality, and statutory compensation & social security provisions.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl hr-subtle border space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold">Electronic Signature Seal</span>
+                <span className="badge-success px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" /> SHA-256 Verified
+                </span>
+              </div>
+              {viewingDoc.signatureDataUrl ? (
+                <div className="bg-white rounded-lg p-2 border border-slate-200 inline-block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={viewingDoc.signatureDataUrl}
+                    alt={`Signature of ${viewingDoc.signedBy}`}
+                    className="h-20 object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="font-serif italic text-xl text-indigo-700 dark:text-indigo-300 py-2">
+                  {viewingDoc.signedBy || viewingDoc.employeeName}
+                </div>
+              )}
+              <div className="text-[11px] font-mono hr-muted space-y-0.5">
+                <div>Signed By: {viewingDoc.signedBy}</div>
+                <div>Timestamp: {viewingDoc.signedAt || viewingDoc.issueDate}</div>
+                <div>Fingerprint: {viewingDoc.verificationHash}</div>
+              </div>
+            </div>
+
+            <div className="no-print flex justify-end gap-2">
+              <button onClick={() => setViewingDoc(null)} className="px-4 py-2 rounded-xl text-xs hr-btn-secondary">Close</button>
+              <button onClick={() => window.print()} className="btn-quantum px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5">
+                <Printer className="w-4 h-4" /> Print / Save Signed PDF
               </button>
             </div>
           </div>

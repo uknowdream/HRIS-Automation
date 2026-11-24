@@ -18,7 +18,7 @@ import { formatCurrency } from "@/lib/payroll-engine";
 import type { PayslipItem } from "@/types/hris";
 
 export default function PayrollPage() {
-  const { locale, employees, payrollRuns, addPayrollRun, pushToast } = useHRIS();
+  const { locale, employees, expenses, payrollRuns, addPayrollRun, pushToast } = useHRIS();
   const isId = locale === "id";
 
   const [running, setRunning] = useState(false);
@@ -26,13 +26,23 @@ export default function PayrollPage() {
   const [selectedSlip, setSelectedSlip] = useState<PayslipItem | null>(null);
   const activeRun = payrollRuns[0];
 
+  // Aggregate approved reimbursements synced to payroll per employee (same currency)
+  const approvedReimbursements = expenses.filter((e) => e.syncedToPayroll);
+  const reimbursementMap = approvedReimbursements.reduce<Record<string, number>>((acc, ex) => {
+    const emp = employees.find((e) => e.id === ex.employeeId);
+    if (emp && emp.currency === ex.currency) {
+      acc[emp.id] = (acc[emp.id] || 0) + ex.amount;
+    }
+    return acc;
+  }, {});
+
   const handleRunPayroll = async () => {
     setRunning(true);
     try {
       const res = await fetch("/api/payroll/calculate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employees, period }),
+        body: JSON.stringify({ employees, period, bonusMap: reimbursementMap }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
@@ -138,6 +148,18 @@ export default function PayrollPage() {
           </button>
         </div>
       </div>
+
+      {/* Approved Reimbursements Sync Banner */}
+      {approvedReimbursements.length > 0 && (
+        <div className="p-3.5 rounded-2xl badge-success flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            {isId
+              ? `${approvedReimbursements.length} klaim reimbursement disetujui siap digabungkan otomatis saat Anda klik "Jalankan Auto-Payroll Baru".`
+              : `${approvedReimbursements.length} approved expense claims are queued to auto-merge into allowances on the next Payroll Run.`}
+          </span>
+        </div>
+      )}
 
       {/* Summary Strip */}
       {activeRun && (

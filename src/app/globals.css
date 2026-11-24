@@ -1,12 +1,13 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg-canvas: #f5f7fb;
-  --bg-sidebar: #ffffff;
+  --bg-canvas: #f4f6fb;
+  --bg-sidebar: #0f172a;
   --bg-surface: #ffffff;
-  --bg-subtle: #f1f5f9;
-  --bg-hover: #f8fafc;
-  --bg-glass: rgba(255, 255, 255, 0.92);
+  --bg-subtle: #f8fafc;
+  --bg-hover: #f1f5f9;
+  --bg-glass: rgba(255, 255, 255, 0.94);
   --border-subtle: #e2e8f0;
   --border-strong: #cbd5e1;
   --text-primary: #0f172a;
@@ -14,27 +15,27 @@
   --text-muted: #64748b;
   --brand-primary: #4f46e5;
   --brand-primary-soft: rgba(79, 70, 229, 0.1);
-  --brand-accent: #0891b2;
+  --brand-accent: #0284c7;
   --brand-emerald: #059669;
-  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 18px -6px rgba(15, 23, 42, 0.06);
-  --shadow-elevated: 0 12px 32px -8px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.04);
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px -4px rgba(15, 23, 42, 0.05);
+  --shadow-elevated: 0 12px 28px -8px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
 html.dark {
   --bg-canvas: #090d16;
-  --bg-sidebar: #0e1422;
+  --bg-sidebar: #0b1120;
   --bg-surface: #111827;
-  --bg-subtle: #182235;
+  --bg-subtle: #172033;
   --bg-hover: #1e293b;
-  --bg-glass: rgba(17, 24, 39, 0.88);
-  --border-subtle: rgba(148, 163, 184, 0.15);
+  --bg-glass: rgba(17, 24, 39, 0.9);
+  --border-subtle: rgba(148, 163, 184, 0.16);
   --border-strong: rgba(148, 163, 184, 0.28);
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   --brand-primary: #6366f1;
-  --brand-primary-soft: rgba(99, 102, 241, 0.18);
-  --brand-accent: #22d3ee;
+  --brand-primary-soft: rgba(99, 102, 241, 0.2);
+  --brand-accent: #38bdf8;
   --brand-emerald: #10b981;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -10px rgba(0, 0, 0, 0.45);
   --shadow-elevated: 0 16px 40px -10px rgba(0, 0, 0, 0.65);
@@ -52,29 +53,24 @@ body {
   color: var(--text-primary);
   font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   overflow-x: hidden;
 }
 
-/* Executive Clean Ambient Canvas */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
 .aether-grid-bg {
   background-color: var(--bg-canvas);
-  background-image:
-    radial-gradient(circle at 0% 0%, rgba(79, 70, 229, 0.055), transparent 36%),
-    radial-gradient(circle at 100% 0%, rgba(8, 145, 178, 0.055), transparent 34%);
 }
 
-html.dark .aether-grid-bg {
-  background-image:
-    radial-gradient(circle at 10% 0%, rgba(99, 102, 241, 0.12), transparent 36%),
-    radial-gradient(circle at 90% 0%, rgba(34, 211, 238, 0.09), transparent 34%);
-}
-
-/* Semantic HRIS Surfaces */
+/* Crisp HRIS Surfaces */
 .glass-panel,
 .hr-panel {
   background: var(--bg-glass);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-card);
 }
@@ -84,12 +80,12 @@ html.dark .aether-grid-bg {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-card);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .glass-card:hover,
 .hr-card:hover {
-  border-color: rgba(79, 70, 229, 0.28);
+  border-color: rgba(79, 70, 229, 0.25);
   box-shadow: var(--shadow-elevated);
 }
 
@@ -116,41 +112,42 @@ html.dark .aether-grid-bg {
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #4f46e5 0%, #0891b2 55%, #059669 100%);
+  background: linear-gradient(135deg, #4f46e5 0%, #0284c7 60%, #059669 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 html.dark .gradient-text {
-  background: linear-gradient(135deg, #818cf8 0%, #22d3ee 55%, #34d399 100%);
+  background: linear-gradient(135deg, #818cf8 0%, #38bdf8 60%, #34d399 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* Primary Buttons */
 .btn-quantum {
   background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
   color: #ffffff;
-  box-shadow: 0 6px 18px -4px rgba(79, 70, 229, 0.42);
-  transition: all 0.18s ease;
+  box-shadow: 0 4px 14px -3px rgba(79, 70, 229, 0.42);
+  transition: all 0.16s ease;
 }
 
 .btn-quantum:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.07);
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px -5px rgba(79, 70, 229, 0.5);
+  box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.5);
 }
 
 .btn-emerald {
   background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
   color: #ffffff;
-  box-shadow: 0 6px 18px -4px rgba(5, 150, 105, 0.38);
-  transition: all 0.18s ease;
+  box-shadow: 0 4px 14px -3px rgba(5, 150, 105, 0.38);
+  transition: all 0.16s ease;
 }
 
 .btn-emerald:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.07);
   transform: translateY(-1px);
 }
 
@@ -162,92 +159,135 @@ html.dark .gradient-text {
 }
 
 .hr-btn-secondary:hover {
-  background: var(--bg-subtle);
+  background: var(--bg-hover);
   border-color: var(--brand-primary);
 }
 
-/* Light-mode safety harmony for utility classes across pages */
-html:not(.dark) .bg-slate-950,
-html:not(.dark) .bg-slate-950\/70,
-html:not(.dark) .bg-slate-950\/80 {
+/* Semantic AAA Contrast Badges */
+.badge-success {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+html.dark .badge-success {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+html.dark .badge-warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-info {
+  background: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+html.dark .badge-info {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+}
+
+.badge-danger {
+  background: #ffe4e6;
+  color: #9f1239;
+  border: 1px solid #fecdd3;
+}
+html.dark .badge-danger {
+  background: rgba(244, 63, 94, 0.18);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+/* Harmonize legacy dark utilities cleanly in Light Mode */
+html:not(.dark) .bg-slate-950:not(.sidebar-dark):not(.hero-dark):not(.code-dark):not(.matrix-dark-board),
+html:not(.dark) .bg-slate-950\/70:not(.sidebar-dark):not(.code-dark):not(.matrix-dark-board),
+html:not(.dark) .bg-slate-950\/80:not(.sidebar-dark):not(.code-dark):not(.matrix-dark-board) {
   background-color: #ffffff !important;
   color: #0f172a !important;
 }
 
-html:not(.dark) .bg-slate-900,
-html:not(.dark) .bg-slate-900\/40,
-html:not(.dark) .bg-slate-900\/50,
-html:not(.dark) .bg-slate-900\/55,
-html:not(.dark) .bg-slate-900\/60,
-html:not(.dark) .bg-slate-900\/70,
-html:not(.dark) .bg-slate-900\/80,
-html:not(.dark) .bg-slate-900\/85 {
+html:not(.dark) .bg-slate-900:not(.sidebar-dark):not(.hero-dark):not(.code-dark),
+html:not(.dark) .bg-slate-900\/40:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/50:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/55:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/60:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/70:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/80:not(.sidebar-dark):not(.hero-dark),
+html:not(.dark) .bg-slate-900\/85:not(.sidebar-dark):not(.hero-dark) {
   background-color: #f8fafc !important;
   color: #0f172a !important;
 }
 
-html:not(.dark) .bg-slate-800,
-html:not(.dark) .bg-slate-800\/70,
-html:not(.dark) .bg-slate-800\/80 {
+html:not(.dark) .bg-slate-800:not(.sidebar-dark),
+html:not(.dark) .bg-slate-800\/70:not(.sidebar-dark),
+html:not(.dark) .bg-slate-800\/80:not(.sidebar-dark) {
   background-color: #eef2f7 !important;
   color: #1e293b !important;
 }
 
-html:not(.dark) .border-slate-800,
-html:not(.dark) .border-slate-800\/60,
-html:not(.dark) .border-slate-800\/70,
-html:not(.dark) .border-slate-800\/80,
-html:not(.dark) .border-slate-700,
-html:not(.dark) .border-slate-700\/60,
-html:not(.dark) .border-slate-700\/70,
-html:not(.dark) .border-slate-700\/80,
+html:not(.dark) .border-slate-800:not(.sidebar-dark),
+html:not(.dark) .border-slate-800\/60:not(.sidebar-dark),
+html:not(.dark) .border-slate-800\/70:not(.sidebar-dark),
+html:not(.dark) .border-slate-800\/80:not(.sidebar-dark),
+html:not(.dark) .border-slate-700:not(.sidebar-dark),
+html:not(.dark) .border-slate-700\/60:not(.sidebar-dark),
+html:not(.dark) .border-slate-700\/70:not(.sidebar-dark),
+html:not(.dark) .border-slate-700\/80:not(.sidebar-dark),
 html:not(.dark) .divide-slate-800\/60 > :not([hidden]) ~ :not([hidden]) {
   border-color: #e2e8f0 !important;
 }
 
-html:not(.dark) .text-slate-100,
-html:not(.dark) .text-slate-200,
-html:not(.dark) .text-slate-300 {
+html:not(.dark) .text-slate-100:not(.on-dark),
+html:not(.dark) .text-slate-200:not(.on-dark),
+html:not(.dark) .text-slate-300:not(.on-dark) {
   color: #334155 !important;
 }
 
-html:not(.dark) .text-slate-400 {
+html:not(.dark) .text-slate-400:not(.on-dark) {
   color: #64748b !important;
 }
 
-html:not(.dark) .text-cyan-300,
-html:not(.dark) .text-cyan-400 {
+html:not(.dark) .text-cyan-300:not(.on-dark),
+html:not(.dark) .text-cyan-400:not(.on-dark) {
   color: #0369a1 !important;
 }
 
-html:not(.dark) .text-emerald-300,
-html:not(.dark) .text-emerald-400 {
+html:not(.dark) .text-emerald-300:not(.on-dark),
+html:not(.dark) .text-emerald-400:not(.on-dark) {
   color: #047857 !important;
 }
 
-html:not(.dark) .text-indigo-300,
-html:not(.dark) .text-indigo-400 {
+html:not(.dark) .text-indigo-300:not(.on-dark),
+html:not(.dark) .text-indigo-400:not(.on-dark) {
   color: #4338ca !important;
 }
 
-html:not(.dark) .text-amber-300,
-html:not(.dark) .text-amber-400 {
+html:not(.dark) .text-amber-300:not(.on-dark),
+html:not(.dark) .text-amber-400:not(.on-dark) {
   color: #b45309 !important;
 }
 
-html:not(.dark) .text-rose-300,
-html:not(.dark) .text-rose-400 {
+html:not(.dark) .text-rose-300:not(.on-dark),
+html:not(.dark) .text-rose-400:not(.on-dark) {
   color: #be123c !important;
 }
 
-html:not(.dark) .text-cyan-100 {
+html:not(.dark) .text-cyan-100:not(.on-dark) {
   color: #0f172a !important;
 }
 
-/* Preserve dark console/code blocks & phone mockup in light mode */
-html:not(.dark) pre.code-dark,
-html:not(.dark) .phone-chassis,
-html:not(.dark) .matrix-dark-board {
+pre.code-dark,
+.matrix-dark-board {
   background-color: #0f172a !important;
   color: #e2e8f0 !important;
 }
@@ -268,7 +308,6 @@ html:not(.dark) .matrix-dark-board {
   background: rgba(79, 70, 229, 0.5);
 }
 
-/* Print styling for Psychometric Certificates, Signed Contracts & Payslips */
 @media print {
   body {
     background: #ffffff !important;

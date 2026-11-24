@@ -187,9 +187,9 @@ export default function MobileAppCompanionPage() {
 
       {/* Main Layout: Interactive Smartphone Frame + Native Companion Specs */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* Interactive Smartphone App */}
+        {/* Interactive Smartphone App (Edge-to-Edge on Mobile, Sleek iPhone Frame on Desktop) */}
         <div className="xl:col-span-5 flex justify-center">
-          <div className="w-full max-w-[390px] rounded-[42px] border-[7px] border-slate-900 bg-slate-950 shadow-2xl shadow-indigo-500/15 overflow-hidden flex flex-col min-h-[700px]">
+          <div className="w-full md:max-w-[390px] rounded-2xl md:rounded-[42px] border md:border-[7px] border-slate-200 dark:border-slate-800 md:border-slate-900 bg-white dark:bg-slate-950 shadow-xl md:shadow-2xl overflow-hidden flex flex-col min-h-[640px] md:min-h-[700px]">
             {/* Mobile Status Bar */}
             <div className="px-6 pt-3 pb-2 flex items-center justify-between text-[11px] font-bold hr-muted">
               <span>{nowClock}</span>

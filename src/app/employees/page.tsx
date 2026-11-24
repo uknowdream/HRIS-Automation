@@ -22,13 +22,18 @@ import { formatCurrency } from "@/lib/payroll-engine";
 import type { Currency, Employee, EmploymentType } from "@/types/hris";
 
 export default function EmployeesPage() {
-  const { locale, employees, addEmployee, openInviteModal, pushToast } = useHRIS();
+  const { locale, employees, addEmployee, updateEmployee, deleteEmployee, openInviteModal, pushToast } = useHRIS();
   const isId = locale === "id";
 
   const [query, setQuery] = useState("");
   const [deptFilter, setDeptFilter] = useState("ALL");
   const [viewMode, setViewMode] = useState<"grid" | "org">("grid");
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
+  const [editingEmp, setEditingEmp] = useState(false);
+  const [editRole, setEditRole] = useState("");
+  const [editDept, setEditDept] = useState("");
+  const [editSalary, setEditSalary] = useState("");
+  const [editStatus, setEditStatus] = useState<Employee["status"]>("Active");
   const [addOpen, setAddOpen] = useState(false);
 
   // Add Form State
@@ -469,6 +474,7 @@ export default function EmployeesPage() {
                 onClick={() => {
                   const target = selectedEmp;
                   setSelectedEmp(null);
+                  setEditingEmp(false);
                   openInviteModal({
                     candidateName: target.name,
                     candidateEmail: target.email,
@@ -477,11 +483,109 @@ export default function EmployeesPage() {
                     department: target.department,
                   });
                 }}
-                className="w-full py-2.5 rounded-xl text-xs font-bold border border-indigo-500/40 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 flex items-center justify-center gap-1.5"
+                className="w-full py-2.5 rounded-xl text-xs font-bold badge-info hover:opacity-90 flex items-center justify-center gap-1.5"
               >
                 <Sparkles className="w-4 h-4" />
                 {isId ? "Kirim Asesmen Promosi (Psikotes)" : "Send Internal Promotion Psychometric Test"}
               </button>
+
+              {!editingEmp ? (
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      setEditRole(selectedEmp.role);
+                      setEditDept(selectedEmp.department);
+                      setEditSalary(String(selectedEmp.baseSalary));
+                      setEditStatus(selectedEmp.status);
+                      setEditingEmp(true);
+                    }}
+                    className="py-2 rounded-xl text-xs font-bold hr-btn-secondary"
+                  >
+                    {isId ? "Edit Profil & Gaji" : "Edit Profile & Pay"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      deleteEmployee(selectedEmp.id);
+                      setSelectedEmp(null);
+                      setEditingEmp(false);
+                      pushToast({
+                        title: isId ? "Karyawan Dihapus / Offboarded" : "Employee Offboarded",
+                        description: selectedEmp.name,
+                        variant: "warning",
+                      });
+                    }}
+                    className="py-2 rounded-xl text-xs font-bold badge-danger"
+                  >
+                    {isId ? "Offboard / Hapus" : "Offboard / Remove"}
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const patch: Partial<Employee> = {
+                      role: editRole.trim() || selectedEmp.role,
+                      department: editDept.trim() || selectedEmp.department,
+                      baseSalary: Number(editSalary) || selectedEmp.baseSalary,
+                      status: editStatus,
+                    };
+                    updateEmployee(selectedEmp.id, patch);
+                    setSelectedEmp({ ...selectedEmp, ...patch });
+                    setEditingEmp(false);
+                    pushToast({
+                      title: isId ? "Profil Karyawan Diperbarui" : "Employee Profile Updated",
+                      description: `${selectedEmp.name} synced to Payroll & Directory.`,
+                      variant: "success",
+                    });
+                  }}
+                  className="p-3.5 rounded-xl hr-subtle space-y-2.5 text-xs mt-2"
+                >
+                  <div className="font-bold">Edit Employee Record</div>
+                  <input
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    placeholder="Role"
+                    className="w-full px-3 py-2 rounded-lg hr-input"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={editDept}
+                      onChange={(e) => setEditDept(e.target.value)}
+                      placeholder="Department"
+                      className="px-3 py-2 rounded-lg hr-input"
+                    />
+                    <select
+                      value={editStatus}
+                      onChange={(e) => setEditStatus(e.target.value as Employee["status"])}
+                      className="px-3 py-2 rounded-lg hr-input"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="On Leave">On Leave</option>
+                      <option value="Onboarding">Onboarding</option>
+                      <option value="Probation">Probation</option>
+                    </select>
+                  </div>
+                  <input
+                    type="number"
+                    value={editSalary}
+                    onChange={(e) => setEditSalary(e.target.value)}
+                    placeholder="Base Salary"
+                    className="w-full px-3 py-2 rounded-lg hr-input font-mono"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingEmp(false)}
+                      className="px-3 py-1.5 rounded-lg hr-btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="btn-quantum px-4 py-1.5 rounded-lg font-bold">
+                      Save Changes
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>

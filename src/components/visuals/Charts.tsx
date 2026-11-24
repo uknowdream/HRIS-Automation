@@ -191,7 +191,7 @@ export function MiniSparkline({
     .join(" ");
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="w-24 h-8 overflow-visible">
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-16 h-7 shrink-0 overflow-visible">
       <polyline
         fill="none"
         stroke={color}

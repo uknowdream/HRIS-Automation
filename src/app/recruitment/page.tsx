@@ -45,6 +45,7 @@ export default function RecruitmentPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkSending, setBulkSending] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "kanban">("kanban");
 
   // Add Candidate Form
   const [name, setName] = useState("");
@@ -166,9 +167,23 @@ export default function RecruitmentPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: "var(--border-strong)" }}>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`px-3 py-2 text-xs font-bold ${viewMode === "kanban" ? "bg-indigo-600 text-white" : "hr-muted"}`}
+            >
+              Kanban Board
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`px-3 py-2 text-xs font-bold ${viewMode === "table" ? "bg-indigo-600 text-white" : "hr-muted"}`}
+            >
+              Bulk Table
+            </button>
+          </div>
           <button
             onClick={() => setAddOpen(true)}
-            className="px-4 py-2.5 rounded-xl text-xs font-bold border border-slate-700 hover:bg-slate-800 flex items-center gap-1.5"
+            className="px-4 py-2.5 rounded-xl text-xs font-bold hr-btn-secondary flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             {isId ? "Tambah Kandidat" : "Add Candidate"}
@@ -231,8 +246,81 @@ export default function RecruitmentPage() {
         })}
       </div>
 
+      {/* Kanban Board View */}
+      {viewMode === "kanban" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {STAGES.map((stage) => {
+            const stageItems = candidates.filter((c) => c.stage === stage);
+            const nextStage = STAGES[STAGES.indexOf(stage) + 1];
+            return (
+              <div key={stage} className="hr-card rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
+                  <span className="text-xs font-extrabold uppercase tracking-wider">{stage}</span>
+                  <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    {stageItems.length}
+                  </span>
+                </div>
+                <div className="space-y-2.5">
+                  {stageItems.length === 0 ? (
+                    <div className="p-4 text-center text-[11px] hr-muted rounded-xl hr-subtle border-dashed">
+                      {isId ? "Belum ada kandidat" : "No candidates"}
+                    </div>
+                  ) : (
+                    stageItems.map((cand) => (
+                      <div key={cand.id} className="p-3.5 rounded-xl hr-subtle space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold truncate">{cand.name}</div>
+                            <div className="text-[11px] text-indigo-600 dark:text-indigo-300 font-semibold truncate">
+                              {cand.role}
+                            </div>
+                          </div>
+                          {cand.cognitiveIq && (
+                            <span className="badge-success px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0">
+                              IQ {cand.cognitiveIq}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] hr-muted truncate">
+                          {cand.location} · {cand.source} · {cand.expectedSalary}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <button
+                            onClick={() =>
+                              openInviteModal({
+                                candidateId: cand.id,
+                                candidateName: cand.name,
+                                candidateEmail: cand.email,
+                                candidatePhone: cand.phone,
+                                role: cand.role,
+                                department: cand.department,
+                              })
+                            }
+                            className="btn-quantum px-2.5 py-1 rounded-lg text-[10px] font-bold inline-flex items-center gap-1"
+                          >
+                            <Send className="w-3 h-3" /> Invite
+                          </button>
+                          {nextStage && (
+                            <button
+                              onClick={() => updateCandidateStage(cand.id, nextStage)}
+                              className="hr-btn-secondary px-2.5 py-1 rounded-lg text-[10px] font-bold"
+                            >
+                              Move → {nextStage}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Candidate Pipeline Table */}
-      <div className="glass-card rounded-2xl p-5 overflow-x-auto">
+      <div className={`glass-card rounded-2xl p-5 overflow-x-auto ${viewMode === "kanban" ? "hidden" : ""}`}>
         <h2 className="text-base font-bold mb-4">
           {isId ? "Daftar Kandidat & Kontrol Pipeline ATS" : "Candidate Directory & ATS Stage Control"}
         </h2>

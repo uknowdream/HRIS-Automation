@@ -12,12 +12,16 @@ import {
   Layers,
   Sparkles,
   FileBarChart,
+  BookOpen,
+  Download,
+  Search,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { getDict } from "@/lib/i18n";
 import { ALL_QUESTIONS, ASSESSMENT_BATTERIES, ASSESSMENT_PRESETS } from "@/lib/psychometrics";
 import type { AssessmentCategory, AssessmentReport } from "@/types/hris";
 import { PsychometricReportView } from "@/components/assessments/PsychometricReportView";
+import { MatrixCellSvg } from "@/components/visuals/MatrixCellSvg";
 
 export default function AssessmentsCenterPage() {
   const router = useRouter();
@@ -27,6 +31,42 @@ export default function AssessmentsCenterPage() {
 
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [activeReport, setActiveReport] = useState<AssessmentReport | null>(null);
+  const [bankOpen, setBankOpen] = useState(false);
+  const [bankCategory, setBankCategory] = useState<AssessmentCategory | "ALL">("ALL");
+  const [bankSearch, setBankSearch] = useState("");
+
+  const exportReportsCsv = () => {
+    const headers = ["Candidate", "Role", "Est_IQ", "Percentile", "Sten", "DISC", "SJT", "Integrity", "Verdict"];
+    const rows = reports.map((r) => [
+      `"${r.candidateName}"`,
+      `"${r.targetRole}"`,
+      r.estimatedIq,
+      r.globalPercentile,
+      r.stenScore,
+      `"${r.disc.archetype}"`,
+      r.sjtScore,
+      r.integrityScore,
+      r.recommendation,
+    ]);
+    const csv = [headers.join(","), ...rows.map((row) => row.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `aetherhr-psychometric-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    pushToast({ title: "Psychometric CSV Exported", variant: "success" });
+  };
+
+  const filteredBank = ALL_QUESTIONS.filter((q) => {
+    const matchCat = bankCategory === "ALL" || q.category === bankCategory;
+    const matchText =
+      !bankSearch.trim() ||
+      q.prompt[locale].toLowerCase().includes(bankSearch.toLowerCase()) ||
+      q.id.toLowerCase().includes(bankSearch.toLowerCase());
+    return matchCat && matchText;
+  });
 
   const launchDemoTest = async (params: {
     presetId?: string;
@@ -234,16 +274,34 @@ export default function AssessmentsCenterPage() {
 
       {/* Completed Reports Ledger */}
       <section className="glass-card rounded-2xl p-5 overflow-x-auto">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h2 className="text-base font-bold flex items-center gap-2">
-            <FileBarChart className="w-4 h-4 text-emerald-400" />
+            <FileBarChart className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             {isId
               ? `Laporan Hasil Psikotes & IQ Kandidat (${reports.length})`
               : `Completed Candidate Psychometric Reports (${reports.length})`}
           </h2>
-          <span className="text-xs text-slate-400">
-            {isId ? "Klik laporan untuk membuka grafik Radar, OCEAN, DISC & Cetak PDF" : "Click any report to view Radar, OCEAN, DISC & PDF Certificate"}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setBankOpen((p) => !p)}
+              className="hr-btn-secondary px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+              {bankOpen
+                ? isId
+                  ? "Tutup Bank Soal"
+                  : "Hide Question Bank"
+                : isId
+                ? `Inspeksi Bank Soal (${ALL_QUESTIONS.length})`
+                : `Inspect ${ALL_QUESTIONS.length}-Item Bank`}
+            </button>
+            <button
+              onClick={exportReportsCsv}
+              className="hr-btn-secondary px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> CSV
+            </button>
+          </div>
         </div>
 
         <table className="w-full text-left text-xs min-w-[760px]">
@@ -306,6 +364,75 @@ export default function AssessmentsCenterPage() {
           </tbody>
         </table>
       </section>
+
+      {/* Searchable 104-Question Bank Inspector (HR Admin Audit View) */}
+      {bankOpen && (
+        <section className="hr-card rounded-2xl p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-extrabold flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
+                {isId ? `Bank Soal Kognitif & Psikotes Terkalibrasi (${filteredBank.length}/${ALL_QUESTIONS.length})` : `Calibrated Question Bank Inspector (${filteredBank.length}/${ALL_QUESTIONS.length})`}
+              </h2>
+              <p className="text-xs hr-muted">
+                {isId ? "Audit kunci jawaban, penjelasan logika, tingkat kesulitan, dan matriks SVG Raven." : "Audit verified answer keys, rationales, difficulty tiers, and live SVG Raven matrices."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 hr-muted absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  value={bankSearch}
+                  onChange={(e) => setBankSearch(e.target.value)}
+                  placeholder="Search questions..."
+                  className="pl-8 pr-3 py-1.5 rounded-xl text-xs hr-input"
+                />
+              </div>
+              <select
+                value={bankCategory}
+                onChange={(e) => setBankCategory(e.target.value as AssessmentCategory | "ALL")}
+                className="px-3 py-1.5 rounded-xl text-xs hr-input font-semibold"
+              >
+                <option value="ALL">All 8 Batteries ({ALL_QUESTIONS.length})</option>
+                {ASSESSMENT_BATTERIES.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.shortName[locale]} ({b.questionCount})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-1">
+            {filteredBank.slice(0, 30).map((q) => (
+              <div key={q.id} className="p-4 rounded-xl hr-subtle space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-bold text-indigo-600 dark:text-cyan-400 uppercase">
+                    {q.id} · {q.category}
+                  </span>
+                  <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">
+                    Tier {q.difficulty} · {q.timeBudgetSec}s
+                  </span>
+                </div>
+                <p className="font-semibold leading-relaxed whitespace-pre-line">{q.prompt[locale]}</p>
+                {q.format === "matrix" && q.matrixVisual && (
+                  <div className="inline-grid grid-cols-3 gap-1 p-2 rounded-xl bg-slate-900">
+                    {q.matrixVisual.grid.map((cellSpec, idx) => (
+                      <MatrixCellSvg key={idx} spec={cellSpec} uid={`insp-${q.id}-${idx}`} size={42} />
+                    ))}
+                  </div>
+                )}
+                {q.correctOptionId && (
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">
+                    ✓ Key: {q.correctOptionId.toUpperCase()}
+                    {q.explanation ? ` — ${q.explanation[locale]}` : ""}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
