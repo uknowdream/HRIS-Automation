@@ -5,6 +5,7 @@ import type {
   ActiveRole,
   AssessmentReport,
   AttendanceRecord,
+  AuthUser,
   AutomationLog,
   AutomationWorkflow,
   Candidate,
@@ -13,8 +14,10 @@ import type {
   CompanyAnnouncement,
   CompanyAsset,
   Employee,
+  EntityScope,
   ExpenseClaim,
   HRDocument,
+  HRNotification,
   IntegrationSettings,
   LearningCourse,
   LeaveRequest,
@@ -71,6 +74,11 @@ interface HRISContextValue {
   toggleTheme: () => void;
   activeRole: ActiveRole;
   setActiveRole: (r: ActiveRole) => void;
+  selectedEntity: EntityScope;
+  setSelectedEntity: (e: EntityScope) => void;
+  authUser: AuthUser;
+  setAuthUser: (u: AuthUser) => void;
+  signOut: () => Promise<void>;
 
   // Domain State
   employees: Employee[];
@@ -92,10 +100,20 @@ interface HRISContextValue {
   okrs: OKRItem[];
   settings: IntegrationSettings;
 
+  // Enterprise Notification Center
+  notifications: HRNotification[];
+  unreadNotificationsCount: number;
+  pushNotification: (n: Omit<HRNotification, "id" | "read" | "createdAt">) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  clearReadNotifications: () => void;
+
   // Actions
   addEmployee: (emp: Omit<Employee, "id" | "employeeCode" | "avatarInitials" | "avatarColor">) => Employee;
   updateEmployee: (id: string, patch: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
+  offboardEmployee: (id: string) => void;
+  hireCandidateToEmployee: (candidateId: string) => Employee | null;
 
   clockInEmployee: (record: Omit<AttendanceRecord, "id">) => void;
   clockOutEmployee: (recordId: string) => void;
@@ -142,14 +160,72 @@ interface HRISContextValue {
   dismissToast: (id: string) => void;
 }
 
-const STORAGE_KEY = "aetherhr_enterprise_state_v3";
+const STORAGE_KEY = "aetherhr_enterprise_state_v5";
+
+const DEFAULT_AUTH_USER: AuthUser = {
+  id: "usr-admin-01",
+  name: "Nadia Kusuma",
+  email: "nadia.kusuma@aetherhr.global",
+  role: "HR Admin",
+  companyName: "AetherHR Global Technologies",
+  avatarInitials: "NK",
+  mfaVerified: true,
+};
+
+const SEED_NOTIFICATIONS: HRNotification[] = [
+  {
+    id: "ntf-1",
+    title: "Persetujuan Cuti Menunggu (2)",
+    message: "Raka Pradipta (3d Annual) & Lukas Weber (5d WFA) menunggu persetujuan.",
+    category: "approval",
+    read: false,
+    createdAt: "2026-11-24T08:15:00Z",
+    href: "/attendance",
+  },
+  {
+    id: "ntf-2",
+    title: "Klaim Reimburse Siap Sync Payroll",
+    message: "2 klaim reimbursement baru dari Engineering menunggu verifikasi finance.",
+    category: "approval",
+    read: false,
+    createdAt: "2026-11-24T07:50:00Z",
+    href: "/finance-ops",
+  },
+  {
+    id: "ntf-3",
+    title: "Radar PKWT & E-Signature",
+    message: "Kontrak Bima Sakti akan berakhir 12 Des & Offer Aurelia menunggu tanda tangan.",
+    category: "approval",
+    read: false,
+    createdAt: "2026-11-24T07:10:00Z",
+    href: "/documents",
+  },
+  {
+    id: "ntf-4",
+    title: "Kandidat High-IQ Selesai Psikotes",
+    message: "Dimas Arya Mahendra meraih IQ 136 (99th pct) — otomatis masuk tahap Interview.",
+    category: "assessment",
+    read: false,
+    createdAt: "2026-11-23T15:42:00Z",
+    href: "/assessments",
+  },
+  {
+    id: "ntf-5",
+    title: "Security Audit OWASP Top 10 Aktif",
+    message: "CSP, HSTS, SSRF Guard, dan HttpOnly HMAC-SHA256 session aktif di seluruh endpoint.",
+    category: "security",
+    read: true,
+    createdAt: "2026-11-23T09:00:00Z",
+    href: "/settings",
+  },
+];
 
 const HRISContext = createContext<HRISContextValue | null>(null);
 
 const AVATAR_GRADIENTS = [
-  "from-indigo-500 to-blue-600",
-  "from-emerald-500 to-teal-600",
-  "from-violet-500 to-purple-600",
+  "from-indigo-600 to-blue-600",
+  "from-emerald-600 to-teal-600",
+  "from-violet-600 to-purple-600",
   "from-amber-500 to-orange-600",
   "from-rose-500 to-pink-600",
   "from-sky-500 to-cyan-600",
@@ -162,6 +238,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocale] = useState<Locale>("id");
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [activeRole, setActiveRole] = useState<ActiveRole>("HR Admin");
+  const [selectedEntity, setSelectedEntity] = useState<EntityScope>("ALL");
+  const [authUser, setAuthUser] = useState<AuthUser>(DEFAULT_AUTH_USER);
 
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(SEED_ATTENDANCE);
@@ -183,11 +261,13 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [logs, setLogs] = useState<AutomationLog[]>(SEED_LOGS);
   const [okrs, setOkrs] = useState<OKRItem[]>(SEED_OKRS);
   const [settings, setSettings] = useState<IntegrationSettings>(DEFAULT_SETTINGS);
+  const [notifications, setNotifications] = useState<HRNotification[]>(SEED_NOTIFICATIONS);
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [invitePrefill, setInvitePrefill] = useState<QuickInvitePrefill | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
+  // Hydrate client state + check HttpOnly server session
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -196,6 +276,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         if (parsed.locale) setLocale(parsed.locale);
         if (parsed.theme === "dark" || parsed.theme === "light") setTheme(parsed.theme);
         if (parsed.activeRole) setActiveRole(parsed.activeRole);
+        if (parsed.selectedEntity) setSelectedEntity(parsed.selectedEntity);
+        if (parsed.authUser) setAuthUser(parsed.authUser);
         if (Array.isArray(parsed.employees) && parsed.employees.length) setEmployees(parsed.employees);
         if (Array.isArray(parsed.attendance)) setAttendance(parsed.attendance);
         if (Array.isArray(parsed.shiftRoster)) setShiftRoster(parsed.shiftRoster);
@@ -213,11 +295,23 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(parsed.workflows)) setWorkflows(parsed.workflows);
         if (Array.isArray(parsed.logs)) setLogs(parsed.logs);
         if (Array.isArray(parsed.okrs)) setOkrs(parsed.okrs);
+        if (Array.isArray(parsed.notifications)) setNotifications(parsed.notifications);
         if (parsed.settings) setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
       }
     } catch {
-      // Ignore corrupt storage
+      // ignore
     }
+
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.authenticated && d.user) {
+          setAuthUser(d.user);
+          setActiveRole(d.user.role);
+        }
+      })
+      .catch(() => {});
+
     setHydrated(true);
   }, []);
 
@@ -230,6 +324,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           locale,
           theme,
           activeRole,
+          selectedEntity,
+          authUser,
           employees,
           attendance,
           shiftRoster,
@@ -247,17 +343,20 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           workflows,
           logs: logs.slice(0, 80),
           okrs,
+          notifications: notifications.slice(0, 40),
           settings,
         })
       );
     } catch {
-      // Ignore quota
+      // ignore
     }
   }, [
     hydrated,
     locale,
     theme,
     activeRole,
+    selectedEntity,
+    authUser,
     employees,
     attendance,
     shiftRoster,
@@ -275,10 +374,10 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     workflows,
     logs,
     okrs,
+    notifications,
     settings,
   ]);
 
-  // Apply dark class only when dark mode is chosen (default is crisp Executive Light!)
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "dark") {
@@ -293,12 +392,41 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => [...prev.slice(-3), { ...toast, id }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((item) => item.id !== id));
-    }, 4500);
+    }, 4200);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((item) => item.id !== id));
   }, []);
+
+  const pushNotification = useCallback(
+    (n: Omit<HRNotification, "id" | "read" | "createdAt">) => {
+      setNotifications((prev) => [
+        {
+          ...n,
+          id: `ntf_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          read: false,
+          createdAt: new Date().toISOString(),
+        },
+        ...prev.slice(0, 39),
+      ]);
+    },
+    []
+  );
+
+  const markNotificationRead = useCallback((id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  }, []);
+
+  const markAllNotificationsRead = useCallback(() => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  }, []);
+
+  const clearReadNotifications = useCallback(() => {
+    setNotifications((prev) => prev.filter((n) => !n.read));
+  }, []);
+
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
   const logAutomation = useCallback((entry: Omit<AutomationLog, "id" | "timestamp">) => {
     setLogs((prev) => [
@@ -310,6 +438,22 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       ...prev.slice(0, 79),
     ]);
   }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      await fetch("/api/auth/session", { method: "DELETE" });
+    } catch {
+      // ignore
+    }
+    logAutomation({
+      event: "auth.session_revoked",
+      channel: "System",
+      recipient: authUser.email,
+      status: "Success",
+      latencyMs: 28,
+      detail: "User signed out — HttpOnly session cookie cleared.",
+    });
+  }, [authUser.email, logAutomation]);
 
   const addEmployee: HRISContextValue["addEmployee"] = useCallback(
     (empInput) => {
@@ -334,16 +478,22 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: `${newEmp.name} (${newEmp.email})`,
         status: "Success",
         latencyMs: 88,
-        detail: `Zero-Touch Onboarding triggered: Digital ID ${newEmp.employeeCode}, 30-60-90 checklist & Mobile PWA access provisioned.`,
+        detail: `Joiner Flow: Digital ID ${newEmp.employeeCode}, 30-60-90 checklist & Mobile PWA provisioned.`,
+      });
+      pushNotification({
+        title: locale === "id" ? "Karyawan Baru Onboarded" : "New Joiner Provisioned",
+        message: `${newEmp.name} (${newEmp.role}) ditambahkan ke direktori global.`,
+        category: "automation",
+        href: "/employees",
       });
       pushToast({
         title: locale === "id" ? "Karyawan Baru Ditambahkan" : "Employee Onboarded",
-        description: `${newEmp.name} (${newEmp.employeeCode}) — Onboarding workflow triggered.`,
+        description: `${newEmp.name} (${newEmp.employeeCode})`,
         variant: "success",
       });
       return newEmp;
     },
-    [employees.length, locale, logAutomation, pushToast]
+    [employees.length, locale, logAutomation, pushNotification, pushToast]
   );
 
   const updateEmployee = useCallback((id: string, patch: Partial<Employee>) => {
@@ -353,6 +503,137 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const deleteEmployee = useCallback((id: string) => {
     setEmployees((prev) => prev.filter((e) => e.id !== id));
   }, []);
+
+  // REAL JML LEAVER FLOW: Offboard employee -> Exit Checklist + IT Asset Pending Return + Security Log
+  const offboardEmployee = useCallback(
+    (id: string) => {
+      const emp = employees.find((e) => e.id === id);
+      if (!emp) return;
+      setEmployees((prev) => prev.filter((e) => e.id !== id));
+      setAssets((prev) =>
+        prev.map((a) => (a.assignedToId === id ? { ...a, status: "Pending Return" } : a))
+      );
+      setChecklists((prev) => [
+        {
+          id: `chk_exit_${Date.now()}`,
+          employeeId: emp.id,
+          employeeName: emp.name,
+          role: emp.role,
+          department: emp.department,
+          type: "Offboarding Exit",
+          startDate: new Date().toISOString().slice(0, 10),
+          buddyName: "Nadia Kusuma (HR)",
+          tasks: [
+            { id: `ex1_${Date.now()}`, phase: "Exit", title: "Revoke SSO, GitHub, Slack & Vercel Production Tokens", owner: "IT", done: true },
+            { id: `ex2_${Date.now()}`, phase: "Exit", title: "Collect Corporate Laptop & Access Badge (Flagged Pending Return)", owner: "IT", done: false },
+            { id: `ex3_${Date.now()}`, phase: "Exit", title: "Calculate Final Pro-Rata Payroll & Unused Leave Payout", owner: "HR", done: false },
+            { id: `ex4_${Date.now()}`, phase: "Exit", title: "Conduct Exit Interview & Issue Paklaring Certificate", owner: "HR", done: false },
+          ],
+        },
+        ...prev,
+      ]);
+      logAutomation({
+        event: "employee.offboarded",
+        channel: "System",
+        recipient: `${emp.name} (${emp.employeeCode})`,
+        status: "Success",
+        latencyMs: 74,
+        detail: "Leaver Flow executed: SSO tokens revoked, assigned IT assets marked Pending Return, Exit Checklist generated.",
+      });
+      pushNotification({
+        title: locale === "id" ? "Alur Offboarding (Leaver) Aktif" : "Offboarding Leaver Workflow Triggered",
+        message: `${emp.name}: akses SSO dicabut, aset IT ditandai Pending Return & checklist exit dibuat.`,
+        category: "security",
+        href: "/learning",
+      });
+      pushToast({
+        title: locale === "id" ? "Offboarding Otomatis Dijalankan" : "Leaver Offboarding Triggered",
+        description: `${emp.name} — Exit Checklist & IT Asset Return created.`,
+        variant: "warning",
+      });
+    },
+    [employees, locale, logAutomation, pushNotification, pushToast]
+  );
+
+  // REAL JML JOINER FLOW: Hire Candidate -> Auto-Create Employee + Auto-Generate Contract + Auto-Create 30-60-90 Onboarding!
+  const hireCandidateToEmployee = useCallback(
+    (candidateId: string): Employee | null => {
+      const cand = candidates.find((c) => c.id === candidateId);
+      if (!cand) return null;
+      setCandidates((prev) =>
+        prev.map((c) => (c.id === candidateId ? { ...c, stage: "Hired" } : c))
+      );
+      const isIndo = cand.location.toLowerCase().includes("jakarta") || cand.location.toLowerCase().includes("id");
+      const newEmp = addEmployee({
+        name: cand.name,
+        email: cand.email,
+        phone: cand.phone,
+        role: cand.role,
+        department: cand.department,
+        location: cand.location,
+        country: isIndo ? "Indonesia" : "Singapore",
+        timezone: isIndo ? "Asia/Jakarta (UTC+7)" : "Asia/Singapore (UTC+8)",
+        employmentType: "Full-Time",
+        status: "Onboarding",
+        joinDate: new Date().toISOString().slice(0, 10),
+        managerName: "Nadia Kusuma",
+        baseSalary: isIndo ? 28000000 : 9500,
+        allowances: isIndo ? 4000000 : 1200,
+        currency: isIndo ? "IDR" : "SGD",
+        taxStatus: "TK/0",
+        cognitiveIq: cand.cognitiveIq || 125,
+        discProfile: cand.discCode || "D-C",
+        performanceScore: 88,
+        potentialScore: 92,
+        attendanceRate: 100,
+        skills: ["Verified Psychometric Hire", cand.department],
+      });
+
+      setDocuments((prev) => [
+        {
+          id: `doc_hire_${Date.now()}`,
+          title: `Employment Agreement & Offer Letter — ${cand.role}`,
+          docType: "Offer Letter",
+          employeeId: newEmp.id,
+          employeeName: newEmp.name,
+          department: newEmp.department,
+          issueDate: new Date().toISOString().slice(0, 10),
+          expiryDate: "2027-11-24",
+          status: "Awaiting Signature",
+        },
+        ...prev,
+      ]);
+
+      setChecklists((prev) => [
+        {
+          id: `chk_hire_${Date.now()}`,
+          employeeId: newEmp.id,
+          employeeName: newEmp.name,
+          role: newEmp.role,
+          department: newEmp.department,
+          type: "Onboarding (30-60-90)",
+          startDate: new Date().toISOString().slice(0, 10),
+          buddyName: "Nadia Kusuma",
+          tasks: [
+            { id: `h1_${Date.now()}`, phase: "Day 1", title: "E-Sign Offer Letter & NDA (Auto-created in Contracts)", owner: "Employee", done: false },
+            { id: `h2_${Date.now()}`, phase: "Day 1", title: "Provision Email, SSO, GitHub & Slack Accounts", owner: "IT", done: false },
+            { id: `h3_${Date.now()}`, phase: "Week 1", title: "Assign Laptop from HQ IT Vault & Configure Payroll Tax", owner: "HR", done: false },
+            { id: `h4_${Date.now()}`, phase: "Month 1", title: "Complete Mandatory ISO 27001 LMS Certification", owner: "Employee", done: false },
+          ],
+        },
+        ...prev,
+      ]);
+
+      pushNotification({
+        title: locale === "id" ? "Joiner Flow Otomatis Selesai!" : "Automated Joiner Pipeline Executed!",
+        message: `${cand.name} resmi direkrut → Profil Karyawan, Kontrak E-Sign & Checklist 30-60-90 dibuat otomatis.`,
+        category: "automation",
+        href: "/learning",
+      });
+      return newEmp;
+    },
+    [addEmployee, candidates, locale, pushNotification]
+  );
 
   const clockInEmployee = useCallback(
     (record: Omit<AttendanceRecord, "id">) => {
@@ -368,7 +649,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       });
       pushToast({
         title: locale === "id" ? "Clock-In GPS Berhasil" : "GPS Clock-In Verified",
-        description: `${record.employeeName} — ${record.clockIn} (${record.location})`,
+        description: `${record.employeeName} — ${record.clockIn}`,
         variant: "success",
       });
     },
@@ -411,13 +692,11 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         submittedAt: new Date().toISOString(),
       };
       setLeaves((prev) => [created, ...prev]);
-      logAutomation({
-        event: "leave.submitted",
-        channel: "System",
-        recipient: req.employeeName,
-        status: "Success",
-        latencyMs: 51,
-        detail: `${req.type} (${req.days} days: ${req.startDate} → ${req.endDate}) queued for manager approval`,
+      pushNotification({
+        title: locale === "id" ? "Pengajuan Cuti Baru" : "New Leave Request",
+        message: `${req.employeeName} mengajukan ${req.type} (${req.days} hari).`,
+        category: "approval",
+        href: "/attendance",
       });
       pushToast({
         title: locale === "id" ? "Pengajuan Cuti Terkirim" : "Leave Request Submitted",
@@ -425,7 +704,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         variant: "info",
       });
     },
-    [locale, logAutomation, pushToast]
+    [locale, pushNotification, pushToast]
   );
 
   const decideLeaveRequest = useCallback(
@@ -443,14 +722,20 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           latencyMs: 112,
           detail: `Leave ${decision} — Automated Email, WhatsApp & Calendar sync executed.`,
         });
+        pushNotification({
+          title: `Cuti ${decision}: ${target.employeeName}`,
+          message: `Notifikasi otomatis terkirim ke Email & WhatsApp (${target.days}d ${target.type}).`,
+          category: "automation",
+          href: "/attendance",
+        });
         pushToast({
           title: `Leave ${decision}`,
-          description: `${target.employeeName} notified via automated Email & WhatsApp workflow.`,
+          description: `${target.employeeName} notified via Email & WhatsApp.`,
           variant: decision === "Approved" ? "success" : "warning",
         });
       }
     },
-    [leaves, logAutomation, pushToast]
+    [leaves, logAutomation, pushNotification, pushToast]
   );
 
   const addPayrollRun = useCallback(
@@ -462,28 +747,32 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: `${run.totalEmployees} Global Employees`,
         status: "Success",
         latencyMs: 265,
-        detail: `${run.label} finalized — Net USD ${run.totalNetUSD.toLocaleString("en-US")} disbursed & digital payslips dispatched.`,
+        detail: `${run.label} finalized — Net USD ${run.totalNetUSD.toLocaleString("en-US")} disbursed.`,
+      });
+      pushNotification({
+        title: `Payroll ${run.period} Selesai`,
+        message: `${run.totalEmployees} slip gaji dihitung & dikirim (Net $${run.totalNetUSD.toLocaleString("en-US")}).`,
+        category: "payroll",
+        href: "/payroll",
       });
       pushToast({
         title: locale === "id" ? "Payroll Global Selesai!" : "Global Payroll Completed!",
-        description: `${run.totalEmployees} payslips calculated & dispatched automatically.`,
+        description: `${run.totalEmployees} payslips calculated & dispatched.`,
         variant: "success",
       });
     },
-    [locale, logAutomation, pushToast]
+    [locale, logAutomation, pushNotification, pushToast]
   );
 
   const submitExpenseClaim = useCallback(
     (claim: Omit<ExpenseClaim, "id" | "status">) => {
       const created: ExpenseClaim = { ...claim, id: `exp_${Date.now()}`, status: "Pending" };
       setExpenses((prev) => [created, ...prev]);
-      logAutomation({
-        event: "expense.submitted",
-        channel: "System",
-        recipient: claim.employeeName,
-        status: "Success",
-        latencyMs: 48,
-        detail: `${claim.category} claim (${claim.currency} ${claim.amount.toLocaleString("en-US")}) submitted for finance review.`,
+      pushNotification({
+        title: locale === "id" ? "Klaim Reimburse Baru" : "New Expense Claim",
+        message: `${claim.employeeName} — ${claim.category} (${claim.currency} ${claim.amount.toLocaleString("en-US")})`,
+        category: "approval",
+        href: "/finance-ops",
       });
       pushToast({
         title: locale === "id" ? "Klaim Reimburse Diajukan" : "Expense Claim Submitted",
@@ -491,7 +780,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         variant: "info",
       });
     },
-    [locale, logAutomation, pushToast]
+    [locale, pushNotification, pushToast]
   );
 
   const decideExpenseClaim = useCallback(
@@ -513,15 +802,24 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           latencyMs: 96,
           detail:
             decision === "Approved"
-              ? `Reimbursement approved & auto-queued into next Payroll cycle (${target.currency} ${target.amount.toLocaleString("en-US")}).`
-              : `Reimbursement claim rejected — notification sent.`,
+              ? `Reimbursement approved & auto-merged into next Payroll cycle (${target.currency} ${target.amount.toLocaleString("en-US")}).`
+              : `Reimbursement rejected.`,
+        });
+        pushNotification({
+          title: `Reimburse ${decision}: ${target.employeeName}`,
+          message:
+            decision === "Approved"
+              ? "Otomatis masuk antrean Payroll periode berikutnya."
+              : "Klaim ditolak oleh finance.",
+          category: "payroll",
+          href: "/payroll",
         });
         pushToast({
           title:
             decision === "Approved"
               ? locale === "id"
-                ? "Reimburse Disetujui & Sync ke Payroll"
-                : "Expense Approved & Synced to Payroll"
+                ? "Reimburse Disetujui & Sync Payroll"
+                : "Expense Approved & Synced"
               : locale === "id"
               ? "Reimburse Ditolak"
               : "Expense Rejected",
@@ -530,7 +828,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         });
       }
     },
-    [expenses, locale, logAutomation, pushToast]
+    [expenses, locale, logAutomation, pushNotification, pushToast]
   );
 
   const addAsset = useCallback(
@@ -595,15 +893,21 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: signerName,
         status: "Success",
         latencyMs: 118,
-        detail: `Digital E-Signature sealed with SHA-256 verification hash (${hashHex.slice(0, 12)}...).`,
+        detail: `Digital E-Signature sealed with SHA-256 hash (${hashHex.slice(0, 12)}...).`,
+      });
+      pushNotification({
+        title: locale === "id" ? "Kontrak Ditandatangani (SHA-256)" : "Contract E-Signed & Sealed",
+        message: `Dokumen disahkan oleh ${signerName} dengan segel kriptografi SHA-256.`,
+        category: "security",
+        href: "/documents",
       });
       pushToast({
-        title: locale === "id" ? "Dokumen Resmi Ditandatangani (E-Sign)" : "Document E-Signed & Sealed",
+        title: locale === "id" ? "Dokumen Resmi Ditandatangani" : "Document E-Signed & Sealed",
         description: `Signed by ${signerName} · SHA-256 Verified`,
         variant: "success",
       });
     },
-    [locale, logAutomation, pushToast]
+    [locale, logAutomation, pushNotification, pushToast]
   );
 
   const addDocument = useCallback(
@@ -633,7 +937,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         detail: `Broadcasted "${ann.title}" via ${ann.channels.join(", ")}`,
       });
       pushToast({
-        title: locale === "id" ? "Pengumuman Dikirim ke Semua Karyawan" : "Announcement Broadcasted",
+        title: locale === "id" ? "Pengumuman Disiarkan" : "Announcement Broadcasted",
         description: ann.title,
         variant: "success",
       });
@@ -669,7 +973,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       );
       pushToast({
         title: locale === "id" ? "Sertifikat LMS Diterbitkan!" : "LMS Certificate Issued!",
-        description: "Verified training credential synced to employee profile.",
+        description: "Verified training credential synced.",
         variant: "success",
       });
     },
@@ -744,10 +1048,16 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: `${inv.candidateName} (${inv.candidateEmail || inv.candidatePhone})`,
         status: "Success",
         latencyMs: 124,
-        detail: `Signed ${inv.durationMinutes}m Cognitive & Psychometric invite sent via ${inv.channels.join(" + ")}`,
+        detail: `Signed ${inv.durationMinutes}m Cognitive & Psychometric invite dispatched via ${inv.channels.join(" + ")}`,
+      });
+      pushNotification({
+        title: `Undangan Tes Terkirim: ${inv.candidateName}`,
+        message: `Link terenkripsi (${inv.durationMinutes}m) siap via ${inv.channels.join(" + ")}.`,
+        category: "automation",
+        href: "/recruitment",
       });
     },
-    [logAutomation]
+    [logAutomation, pushNotification]
   );
 
   const saveAssessmentReport = useCallback(
@@ -807,8 +1117,14 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         latencyMs: 98,
         detail: `IQ ${report.estimatedIq} (${report.globalPercentile}th pct) | DISC ${report.disc.primary}-${report.disc.secondary} | Integrity ${report.integrityScore}%`,
       });
+      pushNotification({
+        title: `Psikotes Selesai: ${report.candidateName}`,
+        message: `IQ ${report.estimatedIq} (${report.globalPercentile}th pct) · ${report.recommendation.replace("_", " ")}`,
+        category: "assessment",
+        href: "/assessments",
+      });
     },
-    [logAutomation, settings.autoAdvanceThresholdIq]
+    [logAutomation, pushNotification, settings.autoAdvanceThresholdIq]
   );
 
   const toggleWorkflow = useCallback((id: string) => {
@@ -854,10 +1170,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       setSettings((prev) => ({ ...prev, ...patch }));
       pushToast({
         title: locale === "id" ? "Konfigurasi Tersimpan" : "Configuration Saved",
-        description:
-          locale === "id"
-            ? "Kredensial & aturan otomatisasi langsung aktif."
-            : "Credentials & automation rules are now live.",
+        description: locale === "id" ? "Perubahan langsung aktif." : "Settings are now live.",
         variant: "success",
       });
     },
@@ -866,6 +1179,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
 
   const resetDemoData = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    setSelectedEntity("ALL");
+    setAuthUser(DEFAULT_AUTH_USER);
+    setActiveRole("HR Admin");
     setEmployees(SEED_EMPLOYEES);
     setAttendance(SEED_ATTENDANCE);
     setShiftRoster(SEED_SHIFT_ROSTER);
@@ -883,10 +1199,11 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     setWorkflows(SEED_WORKFLOWS);
     setLogs(SEED_LOGS);
     setOkrs(SEED_OKRS);
+    setNotifications(SEED_NOTIFICATIONS);
     setSettings(DEFAULT_SETTINGS);
     pushToast({
-      title: "Demo Dataset Reset",
-      description: "Restored pristine international enterprise dataset.",
+      title: "Workspace Reset",
+      description: "Restored pristine enterprise HRIS dataset.",
       variant: "info",
     });
   }, [pushToast]);
@@ -916,6 +1233,11 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         toggleTheme,
         activeRole,
         setActiveRole,
+        selectedEntity,
+        setSelectedEntity,
+        authUser,
+        setAuthUser,
+        signOut,
         employees,
         attendance,
         shiftRoster,
@@ -934,9 +1256,17 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         logs,
         okrs,
         settings,
+        notifications,
+        unreadNotificationsCount,
+        pushNotification,
+        markNotificationRead,
+        markAllNotificationsRead,
+        clearReadNotifications,
         addEmployee,
         updateEmployee,
         deleteEmployee,
+        offboardEmployee,
+        hireCandidateToEmployee,
         clockInEmployee,
         clockOutEmployee,
         cycleShiftCell,

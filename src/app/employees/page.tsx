@@ -22,7 +22,16 @@ import { formatCurrency } from "@/lib/payroll-engine";
 import type { Currency, Employee, EmploymentType } from "@/types/hris";
 
 export default function EmployeesPage() {
-  const { locale, employees, addEmployee, updateEmployee, deleteEmployee, openInviteModal, pushToast } = useHRIS();
+  const {
+    locale,
+    selectedEntity,
+    employees,
+    addEmployee,
+    updateEmployee,
+    offboardEmployee,
+    openInviteModal,
+    pushToast,
+  } = useHRIS();
   const isId = locale === "id";
 
   const [query, setQuery] = useState("");
@@ -55,6 +64,11 @@ export default function EmployeesPage() {
 
   const filtered = useMemo(() => {
     return employees.filter((e) => {
+      const matchEntity =
+        selectedEntity === "ALL" ||
+        (selectedEntity === "Europe"
+          ? e.country === "Germany" || e.country === "United Kingdom"
+          : e.country === selectedEntity);
       const matchDept = deptFilter === "ALL" || e.department === deptFilter;
       const q = query.trim().toLowerCase();
       const matchQ =
@@ -63,9 +77,9 @@ export default function EmployeesPage() {
         e.role.toLowerCase().includes(q) ||
         e.employeeCode.toLowerCase().includes(q) ||
         e.location.toLowerCase().includes(q);
-      return matchDept && matchQ;
+      return matchEntity && matchDept && matchQ;
     });
-  }, [employees, deptFilter, query]);
+  }, [employees, selectedEntity, deptFilter, query]);
 
   const handleExportCsv = () => {
     const headers = [
@@ -505,18 +519,13 @@ export default function EmployeesPage() {
                   </button>
                   <button
                     onClick={() => {
-                      deleteEmployee(selectedEmp.id);
+                      offboardEmployee(selectedEmp.id);
                       setSelectedEmp(null);
                       setEditingEmp(false);
-                      pushToast({
-                        title: isId ? "Karyawan Dihapus / Offboarded" : "Employee Offboarded",
-                        description: selectedEmp.name,
-                        variant: "warning",
-                      });
                     }}
                     className="py-2 rounded-xl text-xs font-bold badge-danger"
                   >
-                    {isId ? "Offboard / Hapus" : "Offboard / Remove"}
+                    {isId ? "Offboard (Leaver Flow)" : "Offboard (Leaver)"}
                   </button>
                 </div>
               ) : (

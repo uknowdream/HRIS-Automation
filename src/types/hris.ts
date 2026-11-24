@@ -1,6 +1,27 @@
 export type Locale = "id" | "en";
 export type ThemeMode = "light" | "dark";
 export type ActiveRole = "HR Admin" | "Department Manager" | "Employee";
+export type EntityScope = "ALL" | "Indonesia" | "Singapore" | "United States" | "Europe";
+
+export interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  role: ActiveRole;
+  companyName: string;
+  avatarInitials: string;
+  mfaVerified: boolean;
+}
+
+export interface HRNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: "approval" | "assessment" | "payroll" | "security" | "automation";
+  read: boolean;
+  createdAt: string;
+  href: string;
+}
 
 export type Currency = "IDR" | "USD" | "SGD" | "EUR" | "GBP";
 

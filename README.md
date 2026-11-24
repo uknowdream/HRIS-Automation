@@ -25,13 +25,16 @@
 - **Universal Webhooks (`/api/webhooks/trigger` & `/api/webhooks/inbound`)** — Real `HMAC-SHA256` signed outbound POSTs (Zapier, Make, n8n, Slack, MS Teams, custom ERP) and inbound REST API receiver.
 - **Calendar Automation (`/api/calendar/ics`)** — RFC-5545 `.ics` calendar invitations for Google Calendar, Outlook, and Apple Calendar.
 
-### 3. Complete Enterprise HRIS Modules (13 Modules · Executive Light & Obsidian Dark UI)
-- **Executive HRIS Dashboard (`/`)** — Action Center Approvals Inbox (Leave/Expense/Contract), Company Announcements, Dept Distribution, Top Psychometric Talent, & Automation Stream.
-- **Global People Directory & Org Chart (`/employees`)** — Multi-country 360° profiles, org hierarchy, CSV export & zero-touch onboarding.
-- **Digital Contracts, E-Signature & Announcements (`/documents`)** — Interactive HTML5 Canvas E-Signature Pad with SHA-256 verification hash, PKWT expiry alerts & company broadcasts.
+### 3. Complete Enterprise HRIS Modules (v5.0 Quiet-Chrome Light & Obsidian Dark UI)
+- **Enterprise Auth, MFA & RBAC (`/login`, `/signup`, `/forgot-password`, `/api/auth/*`)** — Real `scrypt` password hashing (`timingSafeEqual`), signed `HttpOnly` `HMAC-SHA256` session cookies, 2-step MFA verification, 2-step workspace onboarding wizard, SSO entrypoints, and role-based access (`HR Admin`, `Department Manager`, `Employee`).
+- **OWASP Top 10 Cybersecurity Hardening (`next.config.ts`, `src/lib/security.ts`)** — Enforced CSP, HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy`, HTML-escaped email templates (XSS prevention), sliding-window API rate limiting, and OWASP A10 SSRF private-IP/metadata blocklist on outbound webhooks.
+- **Interactive Notification Center & Multi-Entity Switcher (`AppShell.tsx`)** — Collapsible icon rail (`252px` ↔ `72px`), Multi-Entity switcher (`Global`, `Indonesia`, `Singapore`, `US`, `Europe`), live Read/Unread Notification Drawer with category filters (`All`, `Unread`, `Approvals`, `Security`), Global `Ctrl+K` Command Palette, and **AetherAI HR Copilot**.
+- **Executive HRIS Dashboard (`/`)** — Quiet-chrome executive KPI cards scoped by entity, Tabbed Priority Action Center (`Leave`, `Expense`, `E-Sign`), Payroll Readiness, Company Announcements, Dept Distribution & Top Psychometric Talent.
+- **Automated Joiner–Mover–Leaver (JML) Lifecycle (`/recruitment`, `/employees`, `/learning`, `/finance-ops`)** — 1-click **Hire & Auto-Onboard** converts ATS candidates directly into Employees + PKWTT Offer Contracts + 30-60-90 Onboarding Checklists; 1-click **Offboard (Leaver Flow)** flags assigned IT Assets as `Pending Return`, creates Exit Checklists, and logs SSO revocation.
+- **Digital Contracts, E-Signature & Announcements (`/documents`)** — Interactive HTML5 Canvas E-Signature Pad with SHA-256 verification hash, printable signed PDF viewer, PKWT expiry alerts & company broadcasts.
 - **30-60-90 Onboarding & Corporate LMS (`/learning`)** — Cross-functional onboarding task pipelines & printable compliance certificates.
 - **GPS Geofence Attendance, Shift Roster & Leave (`/attendance`)** — Live HTML5 Geolocation check-in/out, interactive Mon–Sun Shift Roster matrix & leave approval auto-notifications.
-- **Multi-Currency Payroll & Tax Engine (`/payroll`, `/api/payroll/calculate`)** — Indonesian **PPh 21 TER + BPJS**, Singapore **CPF**, US **FICA**, EU & UK calculations with printable digital payslips & ERP CSV export.
+- **Multi-Currency Payroll & Tax Engine (`/payroll`, `/api/payroll/calculate`)** — Indonesian **PPh 21 TER + BPJS**, Singapore **CPF**, US **FICA**, EU & UK calculations with automatic approved-expense sync, printable digital payslips & ERP CSV export.
 - **Expense Reimbursements & IT Asset Inventory (`/finance-ops`)** — Expense claims auto-synced to Payroll + corporate laptop/device lifecycle tracking.
 - **OKRs & 9-Box Talent Matrix (`/performance`)** — Interactive talent calibration and quarterly OKR tracking.
 - **Dual Mobile App (`/mobile` PWA + `/mobile-app` React Native Expo)** — Installable Progressive Web App + standalone Expo iOS/Android project.

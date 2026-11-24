@@ -35,6 +35,7 @@ export default function RecruitmentPage() {
     invitations,
     addCandidate,
     updateCandidateStage,
+    hireCandidateToEmployee,
     openInviteModal,
     recordInvitation,
     settings,
@@ -306,6 +307,16 @@ export default function RecruitmentPage() {
                               className="hr-btn-secondary px-2.5 py-1 rounded-lg text-[10px] font-bold"
                             >
                               Move → {nextStage}
+                            </button>
+                          )}
+                          {(cand.stage === "Interview" || cand.stage === "Offer") && (
+                            <button
+                              onClick={() => {
+                                hireCandidateToEmployee(cand.id);
+                              }}
+                              className="btn-emerald px-2.5 py-1 rounded-lg text-[10px] font-bold"
+                            >
+                              {isId ? "Hire & Auto-Onboard ✓" : "Hire & Onboard ✓"}
                             </button>
                           )}
                         </div>

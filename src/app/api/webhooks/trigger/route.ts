@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signWebhookPayload } from "@/lib/token";
+import { checkRateLimit, isSsrfRestrictedUrl } from "@/lib/security";
 
 interface TriggerWebhookBody {
   url: string;
@@ -9,36 +10,30 @@ interface TriggerWebhookBody {
   payload?: Record<string, unknown>;
 }
 
-function isBlockedHost(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-  return (
-    lower === "169.254.169.254" ||
-    lower === "metadata.google.internal" ||
-    lower.endsWith(".internal")
-  );
-}
-
 export async function POST(request: NextRequest) {
   const started = Date.now();
+  const ip = request.headers.get("x-forwarded-for") || "local";
+  const rl = checkRateLimit(`webhook:${ip}`, 30, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: `Rate limit exceeded. Retry in ${rl.resetInSec}s.` },
+      { status: 429 }
+    );
+  }
   try {
     const body = (await request.json()) as TriggerWebhookBody;
     if (!body.url) {
       return NextResponse.json({ ok: false, error: "Webhook URL is required" }, { status: 400 });
     }
 
-    let parsed: URL;
-    try {
-      parsed = new URL(body.url);
-    } catch {
-      return NextResponse.json({ ok: false, error: "Invalid webhook URL format" }, { status: 400 });
-    }
-
-    if (!["http:", "https:"].includes(parsed.protocol) || isBlockedHost(parsed.hostname)) {
+    const ssrfCheck = isSsrfRestrictedUrl(body.url);
+    if (ssrfCheck.blocked) {
       return NextResponse.json(
-        { ok: false, error: "Unsupported or restricted webhook destination" },
+        { ok: false, error: ssrfCheck.reason || "Restricted webhook destination" },
         { status: 400 }
       );
     }
+    const parsed = new URL(body.url);
 
     const eventName = body.event || "hris.automation.test";
     const timestamp = new Date().toISOString();

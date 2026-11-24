@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { signInviteToken, signWebhookPayload } from "@/lib/token";
+import { checkRateLimit, escapeHtml } from "@/lib/security";
 import { ASSESSMENT_PRESETS } from "@/lib/psychometrics";
 import type { AssessmentCategory } from "@/types/hris";
 
@@ -59,39 +60,44 @@ function buildEmailHtml(params: {
   customMessage?: string;
 }) {
   const isId = params.locale === "id";
+  const safeName = escapeHtml(params.candidateName);
+  const safeRole = escapeHtml(params.role);
+  const safeCompany = escapeHtml(params.companyName);
+  const safeUrl = escapeHtml(params.inviteUrl);
+  const safeCustom = params.customMessage ? escapeHtml(params.customMessage) : "";
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8" /></head>
-<body style="margin:0;padding:0;background:#060913;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#e2e8f0;">
-  <div style="max-width:600px;margin:28px auto;background:#0f172a;border:1px solid #1e293b;border-radius:16px;overflow:hidden;">
-    <div style="background:linear-gradient(135deg,#0891b2,#4f46e5,#059669);padding:28px 32px;">
-      <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#e0f2fe;font-weight:700;">${params.companyName}</div>
-      <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;">${isId ? "Undangan Asesmen Kognitif & Psikotes Online" : "Cognitive & Psychometric Assessment Invitation"}</h1>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;">
+  <div style="max-width:600px;margin:28px auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#2563eb,#4f46e5);padding:28px 32px;">
+      <div style="font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#dbeafe;font-weight:700;">${safeCompany}</div>
+      <h1 style="margin:8px 0 0;font-size:21px;color:#ffffff;">${isId ? "Undangan Asesmen Kognitif & Psikotes Online" : "Cognitive & Psychometric Assessment Invitation"}</h1>
     </div>
     <div style="padding:32px;">
-      <p style="font-size:15px;line-height:1.6;margin-top:0;">${isId ? `Halo <strong>${params.candidateName}</strong>,` : `Hello <strong>${params.candidateName}</strong>,`}</p>
-      <p style="font-size:14px;line-height:1.6;color:#cbd5e1;">
+      <p style="font-size:15px;line-height:1.6;margin-top:0;">${isId ? `Halo <strong>${safeName}</strong>,` : `Hello <strong>${safeName}</strong>,`}</p>
+      <p style="font-size:14px;line-height:1.6;color:#475569;">
         ${
-          params.customMessage ||
+          safeCustom ||
           (isId
-            ? `Selamat! Anda diundang untuk mengikuti tahap <strong>Asesmen Kemampuan Kognitif & Psikotes Internasional</strong> untuk posisi <strong>${params.role}</strong> di ${params.companyName}.`
-            : `Congratulations! You have been invited to complete our <strong>International Cognitive & Psychometric Assessment</strong> for the <strong>${params.role}</strong> position at ${params.companyName}.`)
+            ? `Anda diundang untuk mengikuti tahap <strong>Asesmen Kemampuan Kognitif & Psikotes Internasional</strong> untuk posisi <strong>${safeRole}</strong> di ${safeCompany}.`
+            : `You have been invited to complete our <strong>International Cognitive & Psychometric Assessment</strong> for the <strong>${safeRole}</strong> position at ${safeCompany}.`)
         }
       </p>
-      <div style="background:#0b1120;border:1px solid #1e293b;border-radius:12px;padding:18px 20px;margin:22px 0;">
-        <div style="font-size:13px;color:#94a3b8;margin-bottom:6px;">${isId ? "Detail Sesi Asesmen" : "Assessment Session Details"}</div>
-        <div style="font-size:14px;color:#f8fafc;">• <strong>${isId ? "Posisi" : "Role"}:</strong> ${params.role}</div>
-        <div style="font-size:14px;color:#f8fafc;">• <strong>${isId ? "Durasi Terkalibrasi" : "Calibrated Duration"}:</strong> ${params.durationMinutes} ${isId ? "Menit" : "Minutes"}</div>
-        <div style="font-size:14px;color:#f8fafc;">• <strong>${isId ? "Batas Waktu Akses" : "Link Valid Until"}:</strong> ${params.expiryDisplay}</div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:18px 20px;margin:22px 0;">
+        <div style="font-size:12px;color:#64748b;margin-bottom:6px;font-weight:700;text-transform:uppercase;">${isId ? "Detail Sesi Asesmen" : "Assessment Session Details"}</div>
+        <div style="font-size:14px;color:#0f172a;">• <strong>${isId ? "Posisi" : "Role"}:</strong> ${safeRole}</div>
+        <div style="font-size:14px;color:#0f172a;">• <strong>${isId ? "Durasi Terkalibrasi" : "Calibrated Duration"}:</strong> ${params.durationMinutes} ${isId ? "Menit" : "Minutes"}</div>
+        <div style="font-size:14px;color:#0f172a;">• <strong>${isId ? "Batas Waktu Akses" : "Link Valid Until"}:</strong> ${escapeHtml(params.expiryDisplay)}</div>
       </div>
       <div style="text-align:center;margin:28px 0;">
-        <a href="${params.inviteUrl}" style="display:inline-block;background:linear-gradient(135deg,#06b6d4,#6366f1);color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;font-size:15px;">
-          ${isId ? "Mulai Tes Kognitif & Psikotes Sekarang →" : "Launch Cognitive & Psychometric Test →"}
+        <a href="${safeUrl}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;font-weight:700;padding:14px 28px;border-radius:10px;font-size:14px;">
+          ${isId ? "Mulai Tes Kognitif & Psikotes →" : "Launch Cognitive & Psychometric Test →"}
         </a>
       </div>
       <p style="font-size:12px;color:#64748b;line-height:1.6;">
-        ${isId ? "Atau salin tautan unik terenkripsi berikut ke browser Anda:" : "Or copy this unique cryptographically signed link into your browser:"}<br/>
-        <a href="${params.inviteUrl}" style="color:#38bdf8;word-break:break-all;">${params.inviteUrl}</a>
+        ${isId ? "Atau salin tautan unik terenkripsi berikut:" : "Or copy this cryptographically signed link:"}<br/>
+        <a href="${safeUrl}" style="color:#2563eb;word-break:break-all;">${safeUrl}</a>
       </p>
     </div>
   </div>
@@ -101,6 +107,14 @@ function buildEmailHtml(params: {
 
 export async function POST(request: NextRequest) {
   const started = Date.now();
+  const ip = request.headers.get("x-forwarded-for") || "local";
+  const rl = checkRateLimit(`invite:${ip}`, 40, 60_000);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { ok: false, error: `Rate limit exceeded. Retry in ${rl.resetInSec}s.` },
+      { status: 429 }
+    );
+  }
   try {
     const body = (await request.json()) as SendInviteRequest;
 
