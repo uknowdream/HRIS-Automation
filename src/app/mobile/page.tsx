@@ -33,6 +33,9 @@ export default function MobileAppCompanionPage() {
   const router = useRouter();
   const {
     locale,
+    activeRole,
+    currentEmployee,
+    hasPermission,
     employees,
     attendance,
     leaves,
@@ -42,16 +45,19 @@ export default function MobileAppCompanionPage() {
     pushToast,
   } = useHRIS();
   const isId = locale === "id";
+  const isEss = activeRole === "Employee";
 
   const [tab, setTab] = useState<MobileTab>("home");
-  const [selectedEmpId, setSelectedEmpId] = useState(employees[0]?.id || "emp-01");
+  const [selectedEmpId, setSelectedEmpId] = useState(currentEmployee.id);
   const [nowClock, setNowClock] = useState("08:30");
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [leaveReason, setLeaveReason] = useState("");
   const [leaveDays, setLeaveDays] = useState("2");
   const [launchingTest, setLaunchingTest] = useState(false);
 
-  const emp = employees.find((e) => e.id === selectedEmpId) || employees[0];
+  const emp = isEss
+    ? currentEmployee
+    : employees.find((e) => e.id === selectedEmpId) || currentEmployee;
   const payslip = emp ? calculateEmployeePayslip(emp, 0, 0) : null;
   const myAttendance = attendance.find((a) => a.employeeId === emp?.id);
   const myLeaves = leaves.filter((l) => l.employeeId === emp?.id);
@@ -164,20 +170,23 @@ export default function MobileAppCompanionPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={selectedEmpId}
-            onChange={(e) => setSelectedEmpId(e.target.value)}
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-semibold"
-          >
-            {employees.map((item) => (
-              <option key={item.id} value={item.id}>
-                Mobile User: {item.name}
-              </option>
-            ))}
-          </select>
+          {!isEss && (
+            <select
+              value={selectedEmpId}
+              onChange={(e) => setSelectedEmpId(e.target.value)}
+              className="px-3 py-2 rounded-xl hr-input text-xs font-semibold"
+            >
+              {employees.map((item) => (
+                <option key={item.id} value={item.id}>
+                  Mobile User: {item.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
+            type="button"
             onClick={() => void handleInstallPwa()}
-            className="btn-emerald px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5"
+            className="btn-emerald px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5"
           >
             <Download className="w-4 h-4" />
             {isId ? "Install Mobile App (PWA)" : "Install Mobile App (PWA)"}
@@ -247,57 +256,64 @@ export default function MobileAppCompanionPage() {
                   {/* Quick 2x2 Mobile Tiles */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
+                      type="button"
                       onClick={() => setTab("payslip")}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-left space-y-1.5"
+                      className="p-3.5 rounded-2xl hr-subtle hover:border-indigo-400 text-left space-y-1.5 transition"
                     >
-                      <Wallet className="w-5 h-5 text-amber-400" />
+                      <Wallet className="w-5 h-5 text-amber-500" />
                       <div className="text-xs font-bold">
                         {isId ? "Slip Gaji" : "My Payslip"}
                       </div>
-                      <div className="text-[10px] text-emerald-400 font-mono font-bold truncate">
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold truncate">
                         {formatCurrency(payslip.netSalary, payslip.currency)}
                       </div>
                     </button>
                     <button
+                      type="button"
                       onClick={() => setTab("test")}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-left space-y-1.5"
+                      className="p-3.5 rounded-2xl hr-subtle hover:border-indigo-400 text-left space-y-1.5 transition"
                     >
-                      <BrainCircuit className="w-5 h-5 text-cyan-400" />
+                      <BrainCircuit className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                       <div className="text-xs font-bold">Psikotes IQ</div>
-                      <div className="text-[10px] text-cyan-300 font-mono">
+                      <div className="text-[10px] text-indigo-600 dark:text-indigo-300 font-mono">
                         Baseline IQ {emp.cognitiveIq}
                       </div>
                     </button>
                     <button
+                      type="button"
                       onClick={() => setTab("leave")}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-left space-y-1.5"
+                      className="p-3.5 rounded-2xl hr-subtle hover:border-indigo-400 text-left space-y-1.5 transition"
                     >
-                      <Calendar className="w-5 h-5 text-indigo-400" />
+                      <Calendar className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                       <div className="text-xs font-bold">
                         {isId ? "Cuti & WFA" : "Leave & WFA"}
                       </div>
-                      <div className="text-[10px] text-slate-400">12 days balance</div>
+                      <div className="text-[10px] hr-muted">12 days balance</div>
                     </button>
                     <button
+                      type="button"
                       onClick={() => setTab("badge")}
-                      className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 hover:border-cyan-500/40 text-left space-y-1.5"
+                      className="p-3.5 rounded-2xl hr-subtle hover:border-indigo-400 text-left space-y-1.5 transition"
                     >
-                      <QrCode className="w-5 h-5 text-emerald-400" />
+                      <QrCode className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                       <div className="text-xs font-bold">Digital ID QR</div>
-                      <div className="text-[10px] text-slate-400 font-mono">
+                      <div className="text-[10px] hr-muted font-mono">
                         {emp.employeeCode}
                       </div>
                     </button>
                   </div>
 
-                  {/* Quick HR Action */}
-                  <button
-                    onClick={() => openInviteModal()}
-                    className="w-full p-3 rounded-2xl bg-emerald-500/12 border border-emerald-500/35 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2"
-                  >
-                    <Send className="w-4 h-4" />
-                    {isId ? "Kirim Undangan Tes via WhatsApp / Email" : "Dispatch WA / Email Test Invite"}
-                  </button>
+                  {/* Quick HR Action (RBAC Guarded) */}
+                  {hasPermission("assessments:manage") && (
+                    <button
+                      type="button"
+                      onClick={() => openInviteModal()}
+                      className="w-full p-3 rounded-2xl badge-success text-xs font-bold flex items-center justify-center gap-2"
+                    >
+                      <Send className="w-4 h-4" />
+                      {isId ? "Kirim Undangan Tes via WhatsApp / Email" : "Dispatch WA / Email Test Invite"}
+                    </button>
+                  )}
                 </>
               )}
 

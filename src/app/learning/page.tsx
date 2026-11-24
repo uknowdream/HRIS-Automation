@@ -16,9 +16,23 @@ import { useHRIS } from "@/context/HRISContext";
 import type { LearningCourse } from "@/types/hris";
 
 export default function LearningAndOnboardingPage() {
-  const { locale, checklists, courses, toggleChecklistTask, completeCourse } = useHRIS();
+  const {
+    locale,
+    activeRole,
+    authUser,
+    currentEmployee,
+    checklists,
+    courses,
+    toggleChecklistTask,
+    completeCourse,
+  } = useHRIS();
   const isId = locale === "id";
   const [certCourse, setCertCourse] = useState<LearningCourse | null>(null);
+
+  const visibleChecklists =
+    activeRole === "Employee"
+      ? checklists.filter((c) => c.employeeId === currentEmployee.id)
+      : checklists;
 
   return (
     <div className="space-y-6">
@@ -41,7 +55,7 @@ export default function LearningAndOnboardingPage() {
           {isId ? "Checklist Onboarding & Provisioning Aktif" : "Active Employee Onboarding Pipelines"}
         </h2>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {checklists.map((chk) => {
+          {(visibleChecklists.length > 0 ? visibleChecklists : checklists.slice(0, 1)).map((chk) => {
             const doneCount = chk.tasks.filter((t) => t.done).length;
             const pct = Math.round((doneCount / Math.max(1, chk.tasks.length)) * 100);
             return (
@@ -179,7 +193,7 @@ export default function LearningAndOnboardingPage() {
               </div>
               <h2 className="text-2xl font-black">Certificate of Completion</h2>
               <p className="text-xs hr-muted">Awarded to</p>
-              <div className="text-xl font-black gradient-text py-1">Nadia Kusuma</div>
+              <div className="text-xl font-black gradient-text py-1">{authUser.name}</div>
               <p className="text-sm font-bold">{certCourse.title}</p>
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300 text-xs font-mono font-bold">

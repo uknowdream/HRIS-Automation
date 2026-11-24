@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, X, Send, Bot, ArrowRight } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
-import { formatCurrency } from "@/lib/payroll-engine";
+import { calculateEmployeePayslip, formatCurrency } from "@/lib/payroll-engine";
 
 interface CopilotMessage {
   id: string;
@@ -25,6 +25,10 @@ export function AetherCopilot({
   const router = useRouter();
   const {
     locale,
+    activeRole,
+    currentEmployee,
+    hasPermission,
+    auditLogs,
     employees,
     payrollRuns,
     leaves,
@@ -32,6 +36,7 @@ export function AetherCopilot({
     documents,
     reports,
     openInviteModal,
+    recordAuditLog,
   } = useHRIS();
   const isId = locale === "id";
 
@@ -41,8 +46,8 @@ export function AetherCopilot({
       id: "welcome",
       sender: "ai",
       text: isId
-        ? "Halo! Saya **AetherAI HR Copilot**. Tanyakan apa saja tentang data SDM live Anda: total payroll, kandidat IQ tertinggi, kontrak PKWT habis, hitung PPh 21 TER, atau kirim undangan psikotes."
-        : "Hello! I am **AetherAI HR Copilot**. Ask anything about your live workforce data: payroll totals, top IQ candidates, expiring contracts, PPh 21 TER tax estimates, or dispatch test invites.",
+        ? "Halo! Saya AetherAI HR Copilot (Zero-Trust RBAC Aware). Tanyakan tentang Payroll, PPh 21 TER, Kandidat IQ Tertinggi, Kontrak PKWT, atau Audit Log Keamanan sesuai otoritas role Anda."
+        : "Hello! I am AetherAI HR Copilot (RBAC-Aware). Ask about Payroll, PPh 21 Tax, Top IQ Candidates, Contracts, or Security Audit Logs within your role's clearance.",
     },
   ]);
 
@@ -51,14 +56,47 @@ export function AetherCopilot({
   const analyzeQuery = (raw: string): Omit<CopilotMessage, "id" | "sender"> => {
     const q = raw.toLowerCase();
 
+    // 0. Security Audit Log & RBAC Queries
+    if (q.includes("audit") || q.includes("log") || q.includes("rbac") || q.includes("security") || q.includes("keamanan")) {
+      if (!hasPermission("audit:view")) {
+        recordAuditLog({
+          module: "RBAC & Security",
+          action: "copilot.rbac_redacted",
+          target: "Security Audit Trail Query",
+          severity: "SECURITY",
+          detail: `Blocked AI Copilot query for Security Audit Logs from role ${activeRole}.`,
+        });
+        return {
+          text: isId
+            ? `Akses Dibatasi (Zero-Trust RBAC): Role "${activeRole}" tidak diizinkan membaca Security Audit Log organisasi.`
+            : `Access Restricted (Zero-Trust RBAC): Role "${activeRole}" cannot inspect organization Security Audit Logs.`,
+        };
+      }
+      const secCount = auditLogs.filter((l) => l.severity === "SECURITY").length;
+      return {
+        text: isId
+          ? `Tercatat ${auditLogs.length} blok rantai Audit Log SHA-256 (${secCount} event keamanan/RBAC). Event terbaru: [${auditLogs[0]?.action}] oleh ${auditLogs[0]?.actorName} (${auditLogs[0]?.actorRole}).`
+          : `Ledger holds ${auditLogs.length} SHA-256 chained audit blocks (${secCount} security events). Latest: [${auditLogs[0]?.action}] by ${auditLogs[0]?.actorName} (${auditLogs[0]?.actorRole}).`,
+        actionLabel: isId ? "Buka Audit Log & RBAC" : "Open Audit Logs & RBAC",
+        actionPath: "/audit-logs",
+      };
+    }
+
     // 1. Top IQ / Psychometrics
     if (q.includes("iq") || q.includes("psikotes") || q.includes("kandidat") || q.includes("candidate") || q.includes("top")) {
+      if (!hasPermission("assessments:manage")) {
+        return {
+          text: isId
+            ? `Sesuai kebijakan privasi psikometrik RBAC, role "${activeRole}" tidak memiliki izin melihat skor IQ kandidat rekrutmen.`
+            : `Under RBAC psychometric privacy rules, role "${activeRole}" cannot view confidential candidate IQ reports.`,
+        };
+      }
       const top = [...reports].sort((a, b) => b.estimatedIq - a.estimatedIq)[0];
       if (top) {
         return {
           text: isId
-            ? `Kandidat dengan skor tertinggi saat ini adalah **${top.candidateName}** (${top.targetRole}) — Estimated IQ **${top.estimatedIq}** (${top.globalPercentile}th percentile, DISC ${top.disc.archetype}, Integrity ${top.integrityScore}%). Status: **${top.recommendation.replace("_", " ")}**.`
-            : `Your top-scoring candidate is **${top.candidateName}** (${top.targetRole}) — Estimated IQ **${top.estimatedIq}** (${top.globalPercentile}th percentile, DISC ${top.disc.archetype}, Integrity ${top.integrityScore}%). Verdict: **${top.recommendation.replace("_", " ")}**.`,
+            ? `Kandidat skor tertinggi: ${top.candidateName} (${top.targetRole}) — Estimated IQ ${top.estimatedIq} (${top.globalPercentile}th pct, DISC ${top.disc.archetype}, Integrity ${top.integrityScore}%). Status: ${top.recommendation.replace("_", " ")}.`
+            : `Top candidate: ${top.candidateName} (${top.targetRole}) — Estimated IQ ${top.estimatedIq} (${top.globalPercentile}th pct, DISC ${top.disc.archetype}, Integrity ${top.integrityScore}%). Verdict: ${top.recommendation.replace("_", " ")}.`,
           actionLabel: isId ? "Buka Laporan Psikotes" : "Open Assessment Reports",
           actionPath: "/assessments",
         };
@@ -76,16 +114,28 @@ export function AetherCopilot({
         const net = gross - tax - bpjs;
         return {
           text: `Simulasi Cepat PPh 21 TER A (TK/0) untuk Bruto ${formatCurrency(gross, "IDR")}:\n• PPh 21 TER (${(terRate * 100).toFixed(1)}%): -${formatCurrency(tax, "IDR")}\n• BPJS Kesehatan + JHT + JP: -${formatCurrency(bpjs, "IDR")}\n• Estimasi Take-Home Pay: ${formatCurrency(net, "IDR")}`,
-          actionLabel: isId ? "Buka Mesin Payroll" : "Open Payroll Engine",
+          actionLabel: isId ? "Buka Slip Gaji / Payroll" : "Open Payroll",
           actionPath: "/payroll",
         };
       }
+
+      if (!hasPermission("payroll:view_all")) {
+        const mySlip = calculateEmployeePayslip(currentEmployee, 0, 0);
+        return {
+          text: isId
+            ? `Mode Self-Service (${currentEmployee.name}): Estimasi Net Take-Home Pay pribadi Anda bulan ini adalah ${formatCurrency(mySlip.netSalary, mySlip.currency)} (${mySlip.taxRateLabel}). Data gaji karyawan lain disembunyikan oleh RBAC.`
+            : `Self-Service (${currentEmployee.name}): Your personal net take-home pay is ${formatCurrency(mySlip.netSalary, mySlip.currency)} (${mySlip.taxRateLabel}). Colleague salaries are protected by RBAC.`,
+          actionLabel: isId ? "Lihat Slip Gaji Saya" : "View My Payslip",
+          actionPath: "/payroll",
+        };
+      }
+
       const latest = payrollRuns[0];
       const approvedExp = expenses.filter((e) => e.syncedToPayroll).length;
       return {
         text: isId
-          ? `Siklus Payroll terbaru (${latest?.period}) mencakup **${latest?.totalEmployees} karyawan lintas 5 mata uang** dengan total Net Payout setara **$${latest?.totalNetUSD.toLocaleString("en-US")}** (termasuk ${approvedExp} klaim reimburse tersinkronisasi).`
-          : `Latest Payroll run (${latest?.period}) covers **${latest?.totalEmployees} staff across 5 currencies** with Net Payout of **$${latest?.totalNetUSD.toLocaleString("en-US")}** (${approvedExp} approved reimbursements synced).`,
+          ? `Siklus Payroll terbaru (${latest?.period}) mencakup ${latest?.totalEmployees} karyawan lintas 5 mata uang dengan Net Payout $${latest?.totalNetUSD.toLocaleString("en-US")} (${approvedExp} klaim reimburse tersinkronisasi).`
+          : `Latest Payroll run (${latest?.period}) covers ${latest?.totalEmployees} staff across 5 currencies with Net Payout $${latest?.totalNetUSD.toLocaleString("en-US")} (${approvedExp} reimbursements synced).`,
         actionLabel: isId ? "Lihat Detail Payroll" : "Open Global Payroll",
         actionPath: "/payroll",
       };
@@ -93,16 +143,20 @@ export function AetherCopilot({
 
     // 3. Contracts / PKWT / E-Sign
     if (q.includes("kontrak") || q.includes("pkwt") || q.includes("sign") || q.includes("contract")) {
-      const pending = documents.filter((d) => d.status !== "Signed");
+      const scopedDocs =
+        activeRole === "Employee"
+          ? documents.filter((d) => d.employeeId === currentEmployee.id)
+          : documents;
+      const pending = scopedDocs.filter((d) => d.status !== "Signed");
       return {
         text:
           pending.length > 0
             ? isId
-              ? `Ada **${pending.length} dokumen** butuh tindakan: ${pending.map((d) => `${d.employeeName} (${d.status})`).join(", ")}. Anda dapat menandatangani langsung dengan Canvas E-Sign SHA-256.`
-              : `**${pending.length} documents** need action: ${pending.map((d) => `${d.employeeName} (${d.status})`).join(", ")}. You can e-sign directly with SHA-256 verification.`
+              ? `Ada ${pending.length} dokumen butuh tindakan: ${pending.map((d) => `${d.employeeName} (${d.status})`).join(", ")}.`
+              : `${pending.length} documents need action: ${pending.map((d) => `${d.employeeName} (${d.status})`).join(", ")}.`
             : isId
-            ? "Seluruh kontrak karyawan sudah bertanda tangan digital (SHA-256 Verified)."
-            : "All HR contracts are fully signed and SHA-256 verified.",
+            ? "Seluruh kontrak pada scope Anda sudah bertanda tangan digital (SHA-256 Verified)."
+            : "All contracts in your scope are signed and SHA-256 verified.",
         actionLabel: isId ? "Buka Kontrak & E-Sign" : "Open Contracts & E-Sign",
         actionPath: "/documents",
       };
@@ -110,10 +164,17 @@ export function AetherCopilot({
 
     // 4. Invite / WhatsApp / Email
     if (q.includes("undang") || q.includes("invite") || q.includes("wa") || q.includes("whatsapp") || q.includes("email")) {
+      if (!hasPermission("assessments:manage")) {
+        return {
+          text: isId
+            ? `Role "${activeRole}" tidak memiliki otoritas mengirim undangan psikotes kandidat.`
+            : `Role "${activeRole}" is not authorized to dispatch candidate test invitations.`,
+        };
+      }
       return {
         text: isId
           ? "Siap! Saya bisa langsung membuka pengirim undangan Tes Kognitif & Psikotes (104 soal) otomatis via WhatsApp + Email + QR Code + .ICS."
-          : "Ready! I can launch the automated Cognitive & Psychometric invite dispatcher (Email + WhatsApp + QR + .ICS) right now.",
+          : "Ready! I can launch the automated Cognitive & Psychometric invite dispatcher (Email + WhatsApp + QR + .ICS).",
         actionLabel: isId ? "Buka Modal Kirim Undangan" : "Launch Invite Dispatcher",
         actionFn: () => {
           onClose();
@@ -122,15 +183,21 @@ export function AetherCopilot({
       };
     }
 
-    // 5. Default Executive Briefing
+    // 5. Default Briefing
     const pendingLeaves = leaves.filter((l) => l.status === "Pending").length;
     const pendingClaims = expenses.filter((e) => e.status === "Pending").length;
     return {
       text: isId
-        ? `Ringkasan Live HRIS:\n• Total Karyawan Aktif: ${employees.length} orang\n• Cuti Menunggu Approval: ${pendingLeaves}\n• Klaim Reimburse Pending: ${pendingClaims}\n• Dokumen Butuh E-Sign: ${documents.filter((d) => d.status !== "Signed").length}\n• Laporan Psikotes Terverifikasi: ${reports.length}`
-        : `Live HRIS Briefing:\n• Active Headcount: ${employees.length}\n• Pending Leaves: ${pendingLeaves}\n• Pending Reimbursements: ${pendingClaims}\n• Contracts Needing E-Sign: ${documents.filter((d) => d.status !== "Signed").length}\n• Verified Psychometric Reports: ${reports.length}`,
-      actionLabel: isId ? "Lihat Reimburse & Aset" : "Review Expenses & Assets",
-      actionPath: "/finance-ops",
+        ? `Ringkasan Live (${activeRole}):\n• Karyawan Aktif: ${employees.length}\n• Cuti Pending: ${pendingLeaves}\n• Reimburse Pending: ${pendingClaims}\n• Blok Audit SHA-256: ${auditLogs.length}`
+        : `Live Briefing (${activeRole}):\n• Active Staff: ${employees.length}\n• Pending Leaves: ${pendingLeaves}\n• Pending Expenses: ${pendingClaims}\n• SHA-256 Audit Blocks: ${auditLogs.length}`,
+      actionLabel: hasPermission("audit:view")
+        ? isId
+          ? "Cek Audit Log & RBAC"
+          : "Inspect Audit Logs"
+        : isId
+        ? "Buka Absensi Saya"
+        : "Open My Attendance",
+      actionPath: hasPermission("audit:view") ? "/audit-logs" : "/attendance",
     };
   };
 
@@ -148,16 +215,16 @@ export function AetherCopilot({
 
   const quickChips = isId
     ? [
-        "Siapa kandidat IQ tertinggi?",
+        "Cek Security Audit Log",
         "Hitung PPh 21 gaji 25 juta",
+        "Siapa kandidat IQ tertinggi?",
         "Kontrak siapa yang mau habis?",
-        "Kirim undangan psikotes WA",
       ]
     : [
-        "Who is the highest IQ candidate?",
+        "Check Security Audit Logs",
         "Summarize monthly payroll",
+        "Who is the highest IQ candidate?",
         "Which contracts need e-sign?",
-        "Send WhatsApp test invite",
       ];
 
   return (
@@ -171,7 +238,7 @@ export function AetherCopilot({
             <div className="text-xs font-black tracking-tight flex items-center gap-1">
               AetherAI HR Copilot <Sparkles className="w-3 h-3" />
             </div>
-            <div className="text-[10px] text-indigo-100">Live Workforce Intelligence</div>
+            <div className="text-[10px] text-indigo-100">Role: {activeRole} · RBAC Guarded</div>
           </div>
         </div>
         <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/15" aria-label="Close AI Copilot">
@@ -189,7 +256,7 @@ export function AetherCopilot({
                   : "hr-subtle rounded-bl-sm"
               }`}
             >
-              {m.text.replace(/\*\*/g, "")}
+              {m.text}
             </div>
             {m.actionLabel && (
               <button

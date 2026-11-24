@@ -1,6 +1,7 @@
 import type {
   AssessmentReport,
   AttendanceRecord,
+  AuditLogEntry,
   AutomationLog,
   AutomationWorkflow,
   Candidate,
@@ -19,6 +20,7 @@ import type {
   ShiftRosterRow,
 } from "@/types/hris";
 import { calculateEmployeePayslip, FX_TO_USD } from "./payroll-engine";
+import { computeAuditChainHash } from "./rbac";
 
 export const SEED_EMPLOYEES: Employee[] = [
   {
@@ -905,6 +907,10 @@ export const DEFAULT_SETTINGS: IntegrationSettings = {
   inboundApiKey: "aether_live_api_98f2c4a1e7b0",
   autoAdvanceThresholdIq: 120,
   enableStrictProctoringDefault: true,
+  autoApproveShortLeave: true,
+  autoApproveMicroExpense: true,
+  microExpenseLimitUSD: 150,
+  autoInviteNewCandidate: true,
 };
 
 export const SEED_EXPENSES: ExpenseClaim[] = [
@@ -1207,3 +1213,96 @@ export const SEED_SHIFT_ROSTER: ShiftRosterRow[] = [
   { employeeId: "emp-05", employeeName: "Siti Rahmawati", department: "Finance & Legal", days: ["REG", "REG", "REG", "REG", "REG", "OFF", "OFF"] },
   { employeeId: "emp-08", employeeName: "Bima Sakti Nugroho", department: "Engineering", days: ["REG", "REG", "NIGHT", "NIGHT", "FLEX", "OFF", "OFF"] },
 ];
+
+export function buildSeedAuditLogs(): AuditLogEntry[] {
+  const rawEntries: Omit<AuditLogEntry, "prevHash" | "hash">[] = [
+    {
+      id: "aud-01",
+      timestamp: "2026-11-23T09:10:00Z",
+      actorName: "Alexander Wijaya",
+      actorEmail: "alex.wijaya@aetherhr.global",
+      actorRole: "Super Admin",
+      ipAddress: "103.144.18.22 · Jakarta",
+      module: "RBAC & Security",
+      action: "rbac.policy_enforced",
+      target: "Enterprise Zero-Trust RBAC v6.0",
+      severity: "SECURITY",
+      detail: "Activated 5-tier RBAC permission matrix (Super Admin, HR Admin, Finance & Payroll, Manager, ESS) + OWASP Top 10 headers.",
+    },
+    {
+      id: "aud-02",
+      timestamp: "2026-11-23T14:25:12Z",
+      actorName: "Siti Rahmawati",
+      actorEmail: "siti.rahmawati@aetherhr.global",
+      actorRole: "Finance & Payroll",
+      ipAddress: "103.144.18.49 · Jakarta",
+      module: "Payroll & Tax",
+      action: "payroll.disbursed",
+      target: "Cycle 2026-11 (8 Global Staff)",
+      severity: "CRITICAL",
+      detail: "Executed November multi-currency payroll run (PPh 21 TER + BPJS + CPF + FICA) — Net payout USD $45,890.",
+    },
+    {
+      id: "aud-03",
+      timestamp: "2026-11-23T15:42:08Z",
+      actorName: "AetherAI Auto-Pilot",
+      actorEmail: "autopilot@aetherhr.global",
+      actorRole: "HR Admin",
+      ipAddress: "Vercel-Fluid-Edge",
+      module: "Psychometrics",
+      action: "assessment.auto_advanced",
+      target: "Dimas Arya Mahendra (IQ 136)",
+      severity: "SENSITIVE",
+      detail: "Candidate scored IQ 136 (99th pct, Integrity 98%) >= threshold 120 — automatically promoted to Executive Interview.",
+    },
+    {
+      id: "aud-04",
+      timestamp: "2026-11-24T04:18:30Z",
+      actorName: "Marcus Tan",
+      actorEmail: "marcus.tan@aetherhr.global",
+      actorRole: "Department Manager",
+      ipAddress: "118.200.44.91 · Singapore",
+      module: "Attendance & Leave",
+      action: "leave.approved",
+      target: "Chloe Bennett (5d Annual Leave)",
+      severity: "INFO",
+      detail: "Approved leave request — automated WhatsApp, Email & RFC-5545 .ICS calendar invite dispatched.",
+    },
+    {
+      id: "aud-05",
+      timestamp: "2026-11-24T06:05:44Z",
+      actorName: "Raka Pradipta",
+      actorEmail: "raka.pradipta@aetherhr.global",
+      actorRole: "Employee",
+      ipAddress: "36.72.118.14 · Bandung",
+      module: "RBAC & Security",
+      action: "rbac.access_denied",
+      target: "/automation (API Vault & Workflows)",
+      severity: "SECURITY",
+      detail: "Blocked unauthorized ESS Employee navigation to Admin Automation Studio — zero-trust boundary enforced.",
+    },
+    {
+      id: "aud-06",
+      timestamp: "2026-11-24T07:30:19Z",
+      actorName: "Nadia Kusuma",
+      actorEmail: "nadia.kusuma@aetherhr.global",
+      actorRole: "HR Admin",
+      ipAddress: "103.144.18.25 · Jakarta",
+      module: "Contracts & E-Sign",
+      action: "contract.sealed_sha256",
+      target: "PKWTT Permanent — Nadia Kusuma",
+      severity: "SENSITIVE",
+      detail: "Cryptographic Canvas E-Signature sealed and verified on permanent employment contract.",
+    },
+  ];
+
+  // Build forward hash chain (oldest -> newest), then return newest first for UI display
+  const chained: AuditLogEntry[] = [];
+  let prev = "GENESIS_AETHERHR_SOC2_LEDGER_2026";
+  for (const item of rawEntries) {
+    const hash = computeAuditChainHash(prev, item);
+    chained.push({ ...item, prevHash: prev, hash });
+    prev = hash;
+  }
+  return chained.reverse();
+}

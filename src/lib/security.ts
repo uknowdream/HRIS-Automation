@@ -164,6 +164,15 @@ export const DEMO_USERS: {
   passwordHash: string;
 }[] = [
   {
+    id: "usr-super-00",
+    name: "Alexander Wijaya",
+    email: "alex.wijaya@aetherhr.global",
+    role: "Super Admin",
+    companyName: "AetherHR Global Technologies",
+    avatarInitials: "AW",
+    passwordHash: hashPassword("Super@2026!", "aether_salt_super"),
+  },
+  {
     id: "usr-admin-01",
     name: "Nadia Kusuma",
     email: "nadia.kusuma@aetherhr.global",
@@ -171,6 +180,15 @@ export const DEMO_USERS: {
     companyName: "AetherHR Global Technologies",
     avatarInitials: "NK",
     passwordHash: hashPassword("Admin@2026!", "aether_salt_admin"),
+  },
+  {
+    id: "usr-fin-04",
+    name: "Siti Rahmawati",
+    email: "siti.rahmawati@aetherhr.global",
+    role: "Finance & Payroll",
+    companyName: "AetherHR Global Technologies",
+    avatarInitials: "SR",
+    passwordHash: hashPassword("Finance@2026!", "aether_salt_fin"),
   },
   {
     id: "usr-mgr-02",

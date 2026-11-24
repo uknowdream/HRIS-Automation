@@ -20,6 +20,10 @@ import type { CompanyAnnouncement, HRDocument } from "@/types/hris";
 export default function DocumentsAndESignPage() {
   const {
     locale,
+    activeRole,
+    authUser,
+    currentEmployee,
+    hasPermission,
     employees,
     documents,
     announcements,
@@ -28,10 +32,12 @@ export default function DocumentsAndESignPage() {
     publishAnnouncement,
   } = useHRIS();
   const isId = locale === "id";
+  const canManageDocs = hasPermission("documents:manage");
+  const isEss = activeRole === "Employee";
 
   const [signingDoc, setSigningDoc] = useState<HRDocument | null>(null);
   const [viewingDoc, setViewingDoc] = useState<HRDocument | null>(null);
-  const [signerName, setSignerName] = useState("Nadia Kusuma (VP People)");
+  const [signerName, setSignerName] = useState(authUser.name);
   const [hasDrawn, setHasDrawn] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -112,19 +118,23 @@ export default function DocumentsAndESignPage() {
 
   const handlePublishAnnouncement = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!annTitle.trim() || !annBody.trim()) return;
+    if (!annTitle.trim() || !annBody.trim() || !canManageDocs) return;
     publishAnnouncement({
       title: annTitle.trim(),
       body: annBody.trim(),
       category: annCat,
-      author: "Nadia Kusuma · VP People",
+      author: `${authUser.name} · ${activeRole}`,
       channels: ["Portal", "Email", "WhatsApp", "Mobile Push"],
     });
     setAnnTitle("");
     setAnnBody("");
   };
 
-  const expiringDocs = documents.filter(
+  const visibleDocuments = isEss
+    ? documents.filter((d) => d.employeeId === currentEmployee.id)
+    : documents;
+
+  const expiringDocs = visibleDocuments.filter(
     (d) => d.status === "Expiring Soon" || d.status === "Awaiting Signature"
   );
 
@@ -143,12 +153,15 @@ export default function DocumentsAndESignPage() {
               : "Live Canvas E-Signature with SHA-256 sealing, contract expiry alerts, and omnichannel policy broadcasts."}
           </p>
         </div>
-        <button
-          onClick={() => setNewDocOpen(true)}
-          className="btn-quantum px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto"
-        >
-          <Plus className="w-4 h-4" /> {isId ? "Buat Kontrak / Offer Letter" : "Draft Contract / Offer"}
-        </button>
+        {canManageDocs && (
+          <button
+            type="button"
+            onClick={() => setNewDocOpen(true)}
+            className="btn-quantum px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Plus className="w-4 h-4" /> {isId ? "Buat Kontrak / Offer Letter" : "Draft Contract / Offer"}
+          </button>
+        )}
       </div>
 
       {/* Expiry / Pending Signature Radar */}
@@ -189,7 +202,7 @@ export default function DocumentsAndESignPage() {
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
-            {documents.map((doc) => (
+            {visibleDocuments.map((doc) => (
               <tr key={doc.id} className="hover:bg-indigo-500/4">
                 <td className="py-3 px-3">
                   <div className="font-bold">{doc.title}</div>
@@ -249,42 +262,44 @@ export default function DocumentsAndESignPage() {
 
       {/* Announcements Broadcast Center */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-        <form onSubmit={handlePublishAnnouncement} className="xl:col-span-5 hr-card rounded-2xl p-5 space-y-3.5">
-          <h2 className="text-base font-bold flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
-            {isId ? "Siarkan Pengumuman Perusahaan" : "Broadcast Company Announcement"}
-          </h2>
-          <select
-            value={annCat}
-            onChange={(e) => setAnnCat(e.target.value as CompanyAnnouncement["category"])}
-            className="w-full px-3 py-2 rounded-xl text-xs hr-input"
-          >
-            <option value="Policy">HR Policy Update</option>
-            <option value="Payroll & Tax">Payroll & Tax Notice</option>
-            <option value="Company News">Company News</option>
-            <option value="Event">Townhall & Event</option>
-          </select>
-          <input
-            required
-            value={annTitle}
-            onChange={(e) => setAnnTitle(e.target.value)}
-            placeholder={isId ? "Judul pengumuman..." : "Announcement headline..."}
-            className="w-full px-3 py-2.5 rounded-xl text-xs hr-input"
-          />
-          <textarea
-            required
-            rows={3}
-            value={annBody}
-            onChange={(e) => setAnnBody(e.target.value)}
-            placeholder={isId ? "Isi pesan pengumuman yang dikirim ke Portal, Email, WA & Mobile App..." : "Message to publish across Portal, Email, WhatsApp & Mobile App..."}
-            className="w-full px-3 py-2.5 rounded-xl text-xs hr-input"
-          />
-          <button type="submit" className="btn-emerald w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
-            <Send className="w-3.5 h-3.5" /> {isId ? "Publikasikan ke Semua Karyawan" : "Broadcast to All Employees"}
-          </button>
-        </form>
+        {canManageDocs && (
+          <form onSubmit={handlePublishAnnouncement} className="xl:col-span-5 hr-card rounded-2xl p-5 space-y-3.5">
+            <h2 className="text-base font-bold flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
+              {isId ? "Siarkan Pengumuman Perusahaan" : "Broadcast Company Announcement"}
+            </h2>
+            <select
+              value={annCat}
+              onChange={(e) => setAnnCat(e.target.value as CompanyAnnouncement["category"])}
+              className="w-full px-3 py-2 rounded-xl text-xs hr-input"
+            >
+              <option value="Policy">HR Policy Update</option>
+              <option value="Payroll & Tax">Payroll & Tax Notice</option>
+              <option value="Company News">Company News</option>
+              <option value="Event">Townhall & Event</option>
+            </select>
+            <input
+              required
+              value={annTitle}
+              onChange={(e) => setAnnTitle(e.target.value)}
+              placeholder={isId ? "Judul pengumuman..." : "Announcement headline..."}
+              className="w-full px-3 py-2.5 rounded-xl text-xs hr-input"
+            />
+            <textarea
+              required
+              rows={3}
+              value={annBody}
+              onChange={(e) => setAnnBody(e.target.value)}
+              placeholder={isId ? "Isi pesan pengumuman yang dikirim ke Portal, Email, WA & Mobile App..." : "Message to publish across Portal, Email, WhatsApp & Mobile App..."}
+              className="w-full px-3 py-2.5 rounded-xl text-xs hr-input"
+            />
+            <button type="submit" className="btn-emerald w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5">
+              <Send className="w-3.5 h-3.5" /> {isId ? "Publikasikan ke Semua Karyawan" : "Broadcast to All Employees"}
+            </button>
+          </form>
+        )}
 
-        <div className="xl:col-span-7 hr-card rounded-2xl p-5 space-y-3">
+        <div className={`${canManageDocs ? "xl:col-span-7" : "xl:col-span-12"} hr-card rounded-2xl p-5 space-y-3`}>
           <h2 className="text-base font-bold">
             {isId ? "Papan Pengumuman Aktif" : "Live Company Feed"} ({announcements.length})
           </h2>

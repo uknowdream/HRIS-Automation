@@ -26,7 +26,7 @@ import {
 import { useHRIS } from "@/context/HRISContext";
 import { getDict } from "@/lib/i18n";
 import { AreaTrendChart } from "@/components/visuals/Charts";
-import { formatCurrency, FX_TO_USD } from "@/lib/payroll-engine";
+import { calculateEmployeePayslip, formatCurrency, FX_TO_USD } from "@/lib/payroll-engine";
 
 export default function ExecutiveDashboardPage() {
   const {
@@ -34,6 +34,10 @@ export default function ExecutiveDashboardPage() {
     activeRole,
     selectedEntity,
     authUser,
+    currentEmployee,
+    hasPermission,
+    auditLogs,
+    settings,
     employees,
     attendance,
     leaves,
@@ -77,11 +81,23 @@ export default function ExecutiveDashboardPage() {
     scopedEmployees.reduce((acc, e) => acc + e.attendanceRate, 0) / Math.max(1, scopedEmployees.length)
   ).toFixed(1);
 
-  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
-  const pendingExpenses = expenses.filter((e) => e.status === "Pending");
-  const actionDocs = documents.filter(
-    (d) => d.status === "Awaiting Signature" || d.status === "Expiring Soon"
+  const isEss = activeRole === "Employee";
+  const myPayslip = useMemo(
+    () => calculateEmployeePayslip(currentEmployee, 0, 0),
+    [currentEmployee]
   );
+
+  const pendingLeaves = isEss
+    ? leaves.filter((l) => l.employeeId === currentEmployee.id)
+    : leaves.filter((l) => l.status === "Pending");
+  const pendingExpenses = isEss
+    ? expenses.filter((e) => e.employeeId === currentEmployee.id)
+    : expenses.filter((e) => e.status === "Pending");
+  const actionDocs = isEss
+    ? documents.filter((d) => d.employeeId === currentEmployee.id && d.status !== "Signed")
+    : documents.filter(
+        (d) => d.status === "Awaiting Signature" || d.status === "Expiring Soon"
+      );
   const totalPending = pendingLeaves.length + pendingExpenses.length + actionDocs.length;
 
   const deptCounts = Object.entries(
@@ -91,51 +107,110 @@ export default function ExecutiveDashboardPage() {
     }, {})
   ).sort((a, b) => b[1] - a[1]);
 
-  const metrics = [
-    {
-      label: dict.dashboard.totalHeadcount,
-      value: `${scopedEmployees.length}`,
-      delta: "+14.2%",
-      deltaTone: "badge-success",
-      footnote:
-        selectedEntity === "ALL"
-          ? `${new Set(employees.map((e) => e.country)).size} ${isId ? "Entitas Negara" : "Global Entities"}`
-          : selectedEntity,
-      icon: Users,
-      iconTone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400",
-      href: "/employees",
-    },
-    {
-      label: dict.dashboard.monthlyPayroll,
-      value: `$${(scopedPayrollUsd / 1000).toFixed(1)}K`,
-      delta: "Nov 25",
-      deltaTone: "badge-info",
-      footnote: isId ? "PPh 21 TER + BPJS + Reimburse" : "Auto-Tax & Reimburse Synced",
-      icon: Wallet,
-      iconTone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
-      href: "/payroll",
-    },
-    {
-      label: dict.dashboard.attendanceRate,
-      value: `${avgAttendance}%`,
-      delta: `${attendance.length}/${employees.length} In`,
-      deltaTone: "badge-success",
-      footnote: isId ? "GPS Geofence & Shift Aktif" : "GPS Geofence & Active Roster",
-      icon: Clock,
-      iconTone: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400",
-      href: "/attendance",
-    },
-    {
-      label: dict.dashboard.avgCognitiveIq,
-      value: `${avgIq}`,
-      delta: "104 Soal",
-      deltaTone: "badge-warning",
-      footnote: `${reports.length} ${isId ? "Laporan Psikotes" : "Verified Reports"}`,
-      icon: BrainCircuit,
-      iconTone: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400",
-      href: "/assessments",
-    },
-  ];
+  const metrics = isEss
+    ? [
+        {
+          label: isId ? "Estimasi Gaji Bersih Saya" : "My Net Take-Home Pay",
+          value: formatCurrency(myPayslip.netSalary, myPayslip.currency),
+          delta: myPayslip.taxRateLabel.split(" ")[0],
+          deltaTone: "badge-success",
+          footnote: `${currentEmployee.employeeCode} · ${currentEmployee.department}`,
+          icon: Wallet,
+          iconTone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+          href: "/payroll",
+        },
+        {
+          label: isId ? "Kehadiran Pribadi Saya" : "My Attendance Rate",
+          value: `${currentEmployee.attendanceRate}%`,
+          delta: "Geofence OK",
+          deltaTone: "badge-info",
+          footnote: currentEmployee.location,
+          icon: Clock,
+          iconTone: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400",
+          href: "/attendance",
+        },
+        {
+          label: isId ? "Pengajuan Cuti & WFA Saya" : "My Leave & WFA Requests",
+          value: `${pendingLeaves.length}`,
+          delta: "12d Quota",
+          deltaTone: "badge-warning",
+          footnote: isId ? "Auto-Pilot WFA Aktif" : "Auto-Pilot WFA Enabled",
+          icon: Calendar,
+          iconTone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400",
+          href: "/attendance",
+        },
+        {
+          label: isId ? "Skor Kinerja & OKR Saya" : "My Performance Score",
+          value: `${currentEmployee.performanceScore}/100`,
+          delta: "Q4 2026",
+          deltaTone: "badge-success",
+          footnote: currentEmployee.role,
+          icon: Award,
+          iconTone: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400",
+          href: "/performance",
+        },
+      ]
+    : [
+        {
+          label: dict.dashboard.totalHeadcount,
+          value: `${scopedEmployees.length}`,
+          delta: "+14.2%",
+          deltaTone: "badge-success",
+          footnote:
+            selectedEntity === "ALL"
+              ? `${new Set(employees.map((e) => e.country)).size} ${isId ? "Entitas Negara" : "Global Entities"}`
+              : selectedEntity,
+          icon: Users,
+          iconTone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400",
+          href: "/employees",
+        },
+        {
+          label: hasPermission("payroll:view_all")
+            ? dict.dashboard.monthlyPayroll
+            : isId
+            ? "Otomatisasi Aktif"
+            : "Active Workflows",
+          value: hasPermission("payroll:view_all")
+            ? `$${(scopedPayrollUsd / 1000).toFixed(1)}K`
+            : `${activeFlows}/${workflows.length}`,
+          delta: hasPermission("payroll:view_all") ? "Nov 25" : "99.9% SLA",
+          deltaTone: "badge-info",
+          footnote: hasPermission("payroll:view_all")
+            ? isId
+              ? "PPh 21 TER + BPJS + Reimburse"
+              : "Auto-Tax & Reimburse Synced"
+            : "Confidential Payroll Masked by RBAC",
+          icon: Wallet,
+          iconTone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
+          href: "/payroll",
+        },
+        {
+          label: dict.dashboard.attendanceRate,
+          value: `${avgAttendance}%`,
+          delta: `${attendance.length}/${employees.length} In`,
+          deltaTone: "badge-success",
+          footnote: isId ? "GPS Geofence & Shift Aktif" : "GPS Geofence & Active Roster",
+          icon: Clock,
+          iconTone: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-400",
+          href: "/attendance",
+        },
+        {
+          label: hasPermission("assessments:manage")
+            ? dict.dashboard.avgCognitiveIq
+            : isId
+            ? "Blok Audit Keamanan"
+            : "SHA-256 Audit Blocks",
+          value: hasPermission("assessments:manage") ? `${avgIq}` : `${auditLogs.length}`,
+          delta: hasPermission("assessments:manage") ? "104 Soal" : "Zero-Trust",
+          deltaTone: "badge-warning",
+          footnote: hasPermission("assessments:manage")
+            ? `${reports.length} ${isId ? "Laporan Psikotes" : "Verified Reports"}`
+            : "Immutable Compliance Trail",
+          icon: hasPermission("assessments:manage") ? BrainCircuit : ShieldCheck,
+          iconTone: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400",
+          href: hasPermission("assessments:manage") ? "/assessments" : "/audit-logs",
+        },
+      ];
 
   const celebrations = [
     { name: "Nadia Kusuma", event: isId ? "Work Anniversary ke-4" : "4th Work Anniversary", date: "28 Nov", initials: "NK" },
@@ -169,21 +244,32 @@ export default function ExecutiveDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {hasPermission("audit:view") && (
+            <Link
+              href="/audit-logs"
+              className="hr-btn-secondary px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+              {isId ? "Audit Log & RBAC" : "Audit Logs & RBAC"}
+            </Link>
+          )}
           <Link
             href="/payroll"
             className="hr-btn-secondary px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
           >
             <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-            {dict.dashboard.runPayroll}
+            {isEss ? (isId ? "Slip Gaji Saya" : "My Payslip") : dict.dashboard.runPayroll}
           </Link>
-          <Link
-            href="/assessments"
-            className="hr-btn-secondary px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
-          >
-            <BrainCircuit className="w-3.5 h-3.5 text-indigo-600" />
-            {dict.dashboard.launchPsychometric}
-          </Link>
-          {activeRole !== "Employee" && (
+          {hasPermission("assessments:manage") && (
+            <Link
+              href="/assessments"
+              className="hr-btn-secondary px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
+            >
+              <BrainCircuit className="w-3.5 h-3.5 text-indigo-600" />
+              {dict.dashboard.launchPsychometric}
+            </Link>
+          )}
+          {hasPermission("assessments:manage") && (
             <button
               onClick={() => openInviteModal()}
               className="btn-quantum px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
@@ -292,19 +378,27 @@ export default function ExecutiveDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => decideLeaveRequest(lv.id, "Approved")}
-                        className="btn-emerald px-3 py-1.5 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                      </button>
-                      <button
-                        onClick={() => decideLeaveRequest(lv.id, "Rejected")}
-                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
-                        aria-label="Reject leave"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                      </button>
+                      {hasPermission("attendance:approve") ? (
+                        <>
+                          <button
+                            onClick={() => decideLeaveRequest(lv.id, "Approved")}
+                            className="btn-emerald px-3 py-1.5 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                          </button>
+                          <button
+                            onClick={() => decideLeaveRequest(lv.id, "Rejected")}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
+                            aria-label="Reject leave"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="badge-warning px-2.5 py-1 rounded-full text-[10px] font-bold">
+                          {lv.status}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -332,19 +426,27 @@ export default function ExecutiveDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => decideExpenseClaim(ex.id, "Approved")}
-                        className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-semibold"
-                      >
-                        Approve & Sync
-                      </button>
-                      <button
-                        onClick={() => decideExpenseClaim(ex.id, "Rejected")}
-                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
-                        aria-label="Reject expense"
-                      >
-                        <XCircle className="w-3.5 h-3.5" />
-                      </button>
+                      {hasPermission("expenses:approve") ? (
+                        <>
+                          <button
+                            onClick={() => decideExpenseClaim(ex.id, "Approved")}
+                            className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                          >
+                            Approve & Sync
+                          </button>
+                          <button
+                            onClick={() => decideExpenseClaim(ex.id, "Rejected")}
+                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
+                            aria-label="Reject expense"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="badge-info px-2.5 py-1 rounded-full text-[10px] font-bold">
+                          {ex.status}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -413,8 +515,48 @@ export default function ExecutiveDashboardPage() {
           </div>
         </div>
 
-        {/* Right 4 Cols: Payroll Countdown, Dept Breakdown, Milestones & Announcements */}
+        {/* Right 4 Cols: Security Audit Pulse, Payroll Countdown, Dept Breakdown, Milestones */}
         <div className="xl:col-span-4 space-y-5">
+          {/* Live Role-Scoped Security & Auto-Pilot Pulse */}
+          {hasPermission("audit:view") && (
+            <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-extrabold flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  {isId ? "Audit Log & Auto-Pilot AI" : "Security Audit & Auto-Pilot"}
+                </h2>
+                <Link
+                  href="/audit-logs"
+                  className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                >
+                  {isId ? "Semua Log →" : "Full Trail →"}
+                </Link>
+              </div>
+              <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+                <span className={settings.autoApproveShortLeave ? "badge-success px-2 py-0.5 rounded-full" : "hr-subtle px-2 py-0.5 rounded-full"}>
+                  Auto-WFA/Leave: {settings.autoApproveShortLeave ? "ON" : "OFF"}
+                </span>
+                <span className={settings.autoApproveMicroExpense ? "badge-success px-2 py-0.5 rounded-full" : "hr-subtle px-2 py-0.5 rounded-full"}>
+                  Micro-Expense ≤${settings.microExpenseLimitUSD}: {settings.autoApproveMicroExpense ? "ON" : "OFF"}
+                </span>
+              </div>
+              <div className="space-y-2 pt-1">
+                {auditLogs.slice(0, 3).map((a) => (
+                  <div key={a.id} className="text-[11px] flex items-start justify-between gap-2 py-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="min-w-0">
+                      <div className="font-bold truncate">{a.action}</div>
+                      <div className="text-slate-500 truncate">
+                        {a.actorName} ({a.actorRole})
+                      </div>
+                    </div>
+                    <span className="font-mono text-[10px] text-slate-400 shrink-0">
+                      {a.severity}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Payroll Readiness Card */}
           <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3.5">
             <div className="flex items-center justify-between">

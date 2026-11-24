@@ -42,16 +42,17 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { getDict } from "@/lib/i18n";
+import { ALL_ROLES } from "@/lib/rbac";
 import { QuickInviteModal } from "@/components/modals/QuickInviteModal";
 import { AetherCopilot } from "@/components/ai/AetherCopilot";
-import type { ActiveRole, EntityScope, HRNotification } from "@/types/hris";
+import type { ActiveRole, EntityScope, HRNotification, PermissionKey } from "@/types/hris";
 
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   pendingCount?: number;
-  roles: ActiveRole[];
+  requiredPerm?: PermissionKey;
 }
 
 const ENTITY_OPTIONS: { id: EntityScope; label: string; sub: string }[] = [
@@ -71,7 +72,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     theme,
     toggleTheme,
     activeRole,
-    setActiveRole,
+    switchRole,
+    hasPermission,
     selectedEntity,
     setSelectedEntity,
     authUser,
@@ -155,27 +157,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     (d) => d.status === "Awaiting Signature" || d.status === "Expiring Soon"
   ).length;
 
-  const allRoles: ActiveRole[] = ["HR Admin", "Department Manager", "Employee"];
-  const managerUp: ActiveRole[] = ["HR Admin", "Department Manager"];
-  const adminOnly: ActiveRole[] = ["HR Admin"];
-
   const rawGroups: { title: string; items: NavItem[] }[] = [
     {
       title: dict.groups.overview,
-      items: [{ href: "/", label: dict.nav.dashboard, icon: LayoutDashboard, roles: allRoles }],
+      items: [{ href: "/", label: dict.nav.dashboard, icon: LayoutDashboard }],
     },
     {
       title: dict.groups.coreHr,
       items: [
-        { href: "/employees", label: dict.nav.employees, icon: Users, roles: allRoles },
+        { href: "/employees", label: dict.nav.employees, icon: Users },
         {
           href: "/documents",
           label: dict.nav.documents,
           icon: FileSignature,
-          pendingCount: actionDocs,
-          roles: allRoles,
+          pendingCount: activeRole === "Employee" ? undefined : actionDocs,
         },
-        { href: "/learning", label: dict.nav.learning, icon: GraduationCap, roles: allRoles },
+        { href: "/learning", label: dict.nav.learning, icon: GraduationCap },
       ],
     },
     {
@@ -185,39 +182,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           href: "/attendance",
           label: dict.nav.attendance,
           icon: Clock,
-          pendingCount: pendingLeaves,
-          roles: allRoles,
+          pendingCount: hasPermission("attendance:approve") ? pendingLeaves : undefined,
         },
-        { href: "/payroll", label: dict.nav.payroll, icon: Wallet, roles: allRoles },
+        { href: "/payroll", label: dict.nav.payroll, icon: Wallet },
         {
           href: "/finance-ops",
           label: dict.nav.financeOps,
           icon: Receipt,
-          pendingCount: pendingExpenses,
-          roles: allRoles,
+          pendingCount: hasPermission("expenses:approve") ? pendingExpenses : undefined,
         },
       ],
     },
     {
       title: dict.groups.talent,
       items: [
-        { href: "/recruitment", label: dict.nav.recruitment, icon: UserPlus, roles: managerUp },
-        { href: "/assessments", label: dict.nav.assessments, icon: BrainCircuit, roles: managerUp },
-        { href: "/performance", label: dict.nav.performance, icon: Target, roles: allRoles },
+        {
+          href: "/recruitment",
+          label: dict.nav.recruitment,
+          icon: UserPlus,
+          requiredPerm: "recruitment:manage",
+        },
+        {
+          href: "/assessments",
+          label: dict.nav.assessments,
+          icon: BrainCircuit,
+          requiredPerm: "assessments:manage",
+        },
+        { href: "/performance", label: dict.nav.performance, icon: Target },
       ],
     },
     {
       title: dict.groups.platform,
       items: [
-        { href: "/automation", label: dict.nav.automation, icon: Workflow, roles: adminOnly },
-        { href: "/mobile", label: dict.nav.mobile, icon: Smartphone, roles: allRoles },
-        { href: "/settings", label: dict.nav.settings, icon: Settings, roles: adminOnly },
+        {
+          href: "/automation",
+          label: dict.nav.automation,
+          icon: Workflow,
+          requiredPerm: "automation:manage",
+        },
+        {
+          href: "/audit-logs",
+          label: dict.nav.auditLogs,
+          icon: ShieldCheck,
+          requiredPerm: "audit:view",
+        },
+        { href: "/mobile", label: dict.nav.mobile, icon: Smartphone },
+        {
+          href: "/settings",
+          label: dict.nav.settings,
+          icon: Settings,
+          requiredPerm: "settings:manage",
+        },
       ],
     },
   ];
 
   const navGroups = rawGroups
-    .map((g) => ({ ...g, items: g.items.filter((i) => i.roles.includes(activeRole)) }))
+    .map((g) => ({
+      ...g,
+      items: g.items.filter((i) => !i.requiredPerm || hasPermission(i.requiredPerm)),
+    }))
     .filter((g) => g.items.length > 0);
 
   const allNavFlat = navGroups.flatMap((g) => g.items);
@@ -444,13 +468,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
               <div className="space-y-1">
                 <div className="px-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {isId ? "Ganti Perspektif Role" : "Switch RBAC Perspective"}
+                  {isId ? "Simulasi 5 Role RBAC" : "Switch RBAC Role (5 Tiers)"}
                 </div>
-                {(["HR Admin", "Department Manager", "Employee"] as ActiveRole[]).map((roleOpt) => (
+                {ALL_ROLES.map((roleOpt) => (
                   <button
                     key={roleOpt}
                     onClick={() => {
-                      setActiveRole(roleOpt);
+                      switchRole(roleOpt);
                       setProfileMenuOpen(false);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between ${
@@ -533,6 +557,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Quick Topbar RBAC Role Selector for Instant Verification */}
+            <select
+              aria-label="Active RBAC Role"
+              value={activeRole}
+              onChange={(e) => switchRole(e.target.value as ActiveRole)}
+              className="hidden xl:block px-2.5 py-1.5 rounded-lg text-xs font-bold hr-input cursor-pointer"
+              title={isId ? "Ganti Role Akses RBAC" : "Switch Active RBAC Role"}
+            >
+              {ALL_ROLES.map((r) => (
+                <option key={r} value={r}>
+                  Role: {r}
+                </option>
+              ))}
+            </select>
+
             <button
               onClick={() => setCopilotOpen((p) => !p)}
               className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-500/30 hover:bg-indigo-100 transition"
@@ -541,7 +580,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span>AetherAI</span>
             </button>
 
-            {activeRole !== "Employee" && (
+            {hasPermission("assessments:manage") && (
               <button
                 onClick={() => openInviteModal()}
                 className="hidden sm:inline-flex btn-quantum px-3 py-1.5 rounded-lg text-xs font-semibold items-center gap-1.5"

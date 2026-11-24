@@ -1,7 +1,61 @@
 export type Locale = "id" | "en";
 export type ThemeMode = "light" | "dark";
-export type ActiveRole = "HR Admin" | "Department Manager" | "Employee";
+export type ActiveRole =
+  | "Super Admin"
+  | "HR Admin"
+  | "Finance & Payroll"
+  | "Department Manager"
+  | "Employee";
 export type EntityScope = "ALL" | "Indonesia" | "Singapore" | "United States" | "Europe";
+
+export type PermissionKey =
+  | "employees:manage"
+  | "employees:compensation"
+  | "documents:manage"
+  | "attendance:approve"
+  | "roster:manage"
+  | "payroll:view_all"
+  | "payroll:run"
+  | "expenses:approve"
+  | "assets:manage"
+  | "recruitment:manage"
+  | "assessments:manage"
+  | "assessments:answer_keys"
+  | "performance:manage"
+  | "automation:manage"
+  | "settings:manage"
+  | "audit:view"
+  | "rbac:manage";
+
+export type AuditSeverity = "INFO" | "SENSITIVE" | "CRITICAL" | "SECURITY";
+
+export type AuditModule =
+  | "Auth & Session"
+  | "RBAC & Security"
+  | "Payroll & Tax"
+  | "Expenses & Assets"
+  | "People & JML"
+  | "Recruitment & ATS"
+  | "Psychometrics"
+  | "Attendance & Leave"
+  | "Contracts & E-Sign"
+  | "Automation & API";
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actorName: string;
+  actorEmail: string;
+  actorRole: ActiveRole;
+  ipAddress: string;
+  module: AuditModule;
+  action: string;
+  target: string;
+  severity: AuditSeverity;
+  detail: string;
+  prevHash: string;
+  hash: string;
+}
 
 export interface AuthUser {
   id: string;
@@ -485,6 +539,10 @@ export interface IntegrationSettings {
   inboundApiKey: string;
   autoAdvanceThresholdIq: number;
   enableStrictProctoringDefault: boolean;
+  autoApproveShortLeave: boolean;
+  autoApproveMicroExpense: boolean;
+  microExpenseLimitUSD: number;
+  autoInviteNewCandidate: boolean;
 }
 
 export interface OKRItem {

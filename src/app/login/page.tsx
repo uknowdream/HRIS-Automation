@@ -19,7 +19,16 @@ import { useHRIS } from "@/context/HRISContext";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { locale, setLocale, setAuthUser, setActiveRole, pushToast, pushNotification, logAutomation } = useHRIS();
+  const {
+    locale,
+    setLocale,
+    setAuthUser,
+    setActiveRole,
+    recordAuditLog,
+    pushToast,
+    pushNotification,
+    logAutomation,
+  } = useHRIS();
   const isId = locale === "id";
 
   const [email, setEmail] = useState("nadia.kusuma@aetherhr.global");
@@ -45,6 +54,18 @@ export default function LoginPage() {
       }
       setAuthUser(data.user);
       setActiveRole(data.user.role);
+      recordAuditLog({
+        module: "Auth & Session",
+        action: "auth.mfa_login_verified",
+        target: `${data.user.name} (${data.user.role})`,
+        severity: "INFO",
+        detail: `Issued HttpOnly HMAC-SHA256 session cookie for ${data.user.email} (${data.user.role}).`,
+        actorOverride: {
+          name: data.user.name,
+          email: data.user.email,
+          role: data.user.role,
+        },
+      });
       logAutomation({
         event: "auth.session_created",
         channel: "System",
@@ -314,13 +335,15 @@ export default function LoginPage() {
           {!mfaStep && (
             <div className="pt-2 space-y-2">
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                {isId ? "Akses Cepat 1-Klik Berdasarkan Role RBAC:" : "1-Click RBAC Role Demo Access:"}
+                {isId ? "Akses Cepat 1-Klik 5 Role RBAC:" : "1-Click 5-Tier RBAC Demo Access:"}
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
-                  { label: "HR Admin", sub: "Full 13 Modules", demoEmail: "nadia.kusuma@aetherhr.global" },
-                  { label: "Manager", sub: "Team & Hiring", demoEmail: "marcus.tan@aetherhr.global" },
-                  { label: "Employee", sub: "Self-Service", demoEmail: "raka.pradipta@aetherhr.global" },
+                  { label: "Super Admin", sub: "Full + RBAC Matrix", demoEmail: "alex.wijaya@aetherhr.global" },
+                  { label: "HR Admin", sub: "People, ATS & IQ", demoEmail: "nadia.kusuma@aetherhr.global" },
+                  { label: "Finance", sub: "Payroll & Tax", demoEmail: "siti.rahmawati@aetherhr.global" },
+                  { label: "Manager", sub: "Team & Approvals", demoEmail: "marcus.tan@aetherhr.global" },
+                  { label: "Employee", sub: "Self-Service (ESS)", demoEmail: "raka.pradipta@aetherhr.global" },
                 ].map((d) => (
                   <button
                     key={d.label}

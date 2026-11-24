@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Smartphone,
   MessageCircle,
+  Zap,
+  Lock,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import type { LeaveRequest } from "@/types/hris";
@@ -19,6 +21,11 @@ import type { LeaveRequest } from "@/types/hris";
 export default function AttendancePage() {
   const {
     locale,
+    activeRole,
+    currentEmployee,
+    hasPermission,
+    settings,
+    updateSettings,
     employees,
     attendance,
     shiftRoster,
@@ -31,16 +38,24 @@ export default function AttendancePage() {
   } = useHRIS();
   const isId = locale === "id";
 
+  const canApproveLeave = hasPermission("attendance:approve");
+  const canManageRoster = hasPermission("roster:manage");
+  const canEditSettings = hasPermission("settings:manage");
+  const isEss = activeRole === "Employee";
+
   const [nowTime, setNowTime] = useState("08:30:00");
-  const [selectedEmpId, setSelectedEmpId] = useState(employees[0]?.id || "emp-01");
+  const [selectedEmpId, setSelectedEmpId] = useState(currentEmployee.id);
   const [gpsStatus, setGpsStatus] = useState("HQ SCBD Geofence Verified (-6.2248, 106.8095)");
   const [coords, setCoords] = useState({ lat: -6.2248, lng: 106.8095 });
 
-  // Leave form
   const [leaveType, setLeaveType] = useState<LeaveRequest["type"]>("Annual Leave");
   const [startDate, setStartDate] = useState("2026-12-15");
-  const [endDate, setEndDate] = useState("2026-12-17");
+  const [endDate, setEndDate] = useState("2026-12-16");
   const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    setSelectedEmpId(currentEmployee.id);
+  }, [currentEmployee.id]);
 
   useEffect(() => {
     const tick = () => setNowTime(new Date().toTimeString().slice(0, 8));
@@ -66,14 +81,17 @@ export default function AttendancePage() {
     }
   };
 
+  const targetEmployee = isEss
+    ? currentEmployee
+    : employees.find((e) => e.id === selectedEmpId) || currentEmployee;
+
   const handleClockIn = () => {
-    const emp = employees.find((e) => e.id === selectedEmpId) || employees[0];
-    if (!emp) return;
+    if (!targetEmployee) return;
     const hhmm = new Date().toTimeString().slice(0, 5);
     clockInEmployee({
-      employeeId: emp.id,
-      employeeName: emp.name,
-      department: emp.department,
+      employeeId: targetEmployee.id,
+      employeeName: targetEmployee.name,
+      department: targetEmployee.department,
       date: new Date().toISOString().slice(0, 10),
       clockIn: hhmm,
       clockOut: null,
@@ -88,18 +106,17 @@ export default function AttendancePage() {
 
   const handleSubmitLeave = (e: React.FormEvent) => {
     e.preventDefault();
-    const emp = employees.find((item) => item.id === selectedEmpId) || employees[0];
-    if (!emp || !reason.trim()) return;
+    if (!targetEmployee || !reason.trim()) return;
     const days = Math.max(
       1,
       Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (86400 * 1000)) + 1
     );
     submitLeaveRequest({
-      employeeId: emp.id,
-      employeeName: emp.name,
-      department: emp.department,
-      employeeEmail: emp.email,
-      employeePhone: emp.phone,
+      employeeId: targetEmployee.id,
+      employeeName: targetEmployee.name,
+      department: targetEmployee.department,
+      employeeEmail: targetEmployee.email,
+      employeePhone: targetEmployee.phone,
       type: leaveType,
       startDate,
       endDate,
@@ -109,89 +126,160 @@ export default function AttendancePage() {
     setReason("");
   };
 
+  const visibleLeaves = isEss
+    ? leaves.filter((l) => l.employeeId === currentEmployee.id)
+    : leaves;
+
+  const visibleAttendance = isEss
+    ? attendance.filter((a) => a.employeeId === currentEmployee.id)
+    : attendance;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-black tracking-tight flex items-center gap-2.5">
-          <Clock className="w-6 h-6 text-cyan-400" />
-          {isId ? "Absensi GPS Geofence & Otomatisasi Cuti" : "GPS Geofence Attendance & Leave Automation"}
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          {isId
-            ? "Verifikasi kehadiran real-time lintas lokasi (Web & Mobile App) dan persetujuan cuti otomatis dengan notifikasi WA/Email."
-            : "Real-time location-verified check-ins across Web & Mobile Apps plus automated WA/Email leave approvals."}
-        </p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight flex items-center gap-2.5">
+            <Clock className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+            {isId ? "Absensi GPS Geofence, Shift & Otomatisasi Cuti" : "GPS Geofence Attendance, Roster & Leave Automation"}
+          </h1>
+          <p className="text-xs sm:text-sm hr-muted mt-1">
+            {isId
+              ? "Verifikasi kehadiran real-time lintas lokasi dan persetujuan cuti otomatis dengan Auto-Pilot AI & notifikasi WA/Email."
+              : "Real-time location-verified check-ins plus Zero-Touch Auto-Pilot leave approvals and WA/Email notifications."}
+          </p>
+        </div>
+
+        {/* Auto-Pilot Short Leave Policy Pill */}
+        <div className="flex items-center gap-2 self-start lg:self-auto">
+          <div className="px-3.5 py-2 rounded-xl hr-subtle flex items-center gap-2 text-xs">
+            <Zap className="w-3.5 h-3.5 text-amber-500" />
+            <span className="font-semibold">
+              {isId ? "Auto-Approve WFA & Cuti ≤2h:" : "Auto-Approve WFA & ≤2d Leave:"}
+            </span>
+            {canEditSettings ? (
+              <button
+                type="button"
+                onClick={() =>
+                  updateSettings({ autoApproveShortLeave: !settings.autoApproveShortLeave })
+                }
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  settings.autoApproveShortLeave ? "badge-success" : "badge-warning"
+                }`}
+              >
+                {settings.autoApproveShortLeave ? "ACTIVE" : "MANUAL"}
+              </button>
+            ) : (
+              <span className="badge-success px-2 py-0.5 rounded-full text-[10px] font-bold">
+                {settings.autoApproveShortLeave ? "ON" : "OFF"}
+              </span>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Live GPS Clock-In Terminal + Leave Submission */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* GPS Clock In Card */}
-        <div className="glass-panel rounded-2xl p-6 border border-cyan-500/25 space-y-4">
+        <div className="hr-card rounded-2xl p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
                 Live Smart Terminal
               </span>
-              <div className="text-3xl font-black font-mono tracking-tight mt-1">{nowTime}</div>
+              <div className="text-3xl font-extrabold font-mono tracking-tight mt-1 tabular-nums">
+                {nowTime}
+              </div>
             </div>
-            <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs font-bold flex items-center gap-1.5">
+            <span className="badge-success px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4" /> Geofence OK
             </span>
           </div>
 
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1">
-                {isId ? "Pilih Karyawan" : "Select Employee"}
+              <label className="block text-xs font-bold hr-muted mb-1">
+                {isEss
+                  ? isId
+                    ? "Identitas Karyawan Aktif (Terkunci oleh RBAC)"
+                    : "Authenticated Employee Identity (RBAC Locked)"
+                  : isId
+                  ? "Pilih Karyawan"
+                  : "Select Employee"}
               </label>
-              <select
-                value={selectedEmpId}
-                onChange={(e) => setSelectedEmpId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs"
-              >
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name} — {e.department} ({e.location})
-                  </option>
-                ))}
-              </select>
+              {isEss ? (
+                <div className="w-full px-3.5 py-2.5 rounded-xl hr-subtle text-xs font-bold flex items-center justify-between">
+                  <span>
+                    {currentEmployee.name} — {currentEmployee.department}
+                  </span>
+                  <Lock className="w-3.5 h-3.5 hr-muted" />
+                </div>
+              ) : (
+                <select
+                  value={selectedEmpId}
+                  onChange={(e) => setSelectedEmpId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl hr-input text-xs font-semibold"
+                >
+                  {employees.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} — {e.department} ({e.location})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 flex items-center justify-between gap-2 text-xs">
-              <span className="flex items-center gap-2 text-slate-300 truncate">
-                <MapPin className="w-4 h-4 text-cyan-400 shrink-0" />
+            <div className="p-3 rounded-xl hr-subtle flex items-center justify-between gap-2 text-xs">
+              <span className="flex items-center gap-2 truncate font-medium">
+                <MapPin className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <span className="truncate">{gpsStatus}</span>
               </span>
               <button
                 type="button"
                 onClick={detectGps}
-                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold flex items-center gap-1 shrink-0"
+                className="hr-btn-secondary px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shrink-0"
               >
-                <Navigation className="w-3 h-3 text-cyan-400" /> GPS
+                <Navigation className="w-3 h-3 text-indigo-600" /> GPS
               </button>
             </div>
 
             <button
+              type="button"
               onClick={handleClockIn}
               className="w-full btn-quantum py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4" />
-              {isId ? "Clock-In Sekarang (Verifikasi GPS + Sync Payroll)" : "Clock-In Now (GPS Verified + Payroll Sync)"}
+              {isId ? "Clock-In Sekarang (Verifikasi GPS + Audit Log)" : "Clock-In Now (GPS Verified + Audit Log)"}
             </button>
           </div>
         </div>
 
         {/* Quick Leave Request Card */}
-        <form onSubmit={handleSubmitLeave} className="glass-card rounded-2xl p-6 space-y-3.5">
-          <h2 className="text-base font-bold flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-indigo-400" />
-            {isId ? "Ajukan Cuti / WFA Baru" : "Submit Leave / WFA Request"}
-          </h2>
+        <form onSubmit={handleSubmitLeave} className="hr-card rounded-2xl p-6 space-y-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-extrabold flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              {isId ? "Ajukan Cuti / WFA Baru" : "Submit Leave / WFA Request"}
+            </h2>
+            {settings.autoApproveShortLeave && (
+              <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">
+                Zero-Touch AI Active
+              </span>
+            )}
+          </div>
+          <p className="text-xs hr-muted">
+            {settings.autoApproveShortLeave
+              ? isId
+                ? "Kebijakan aktif: Remote WFA atau cuti ≤ 2 hari (kehadiran ≥ 95%) otomatis disetujui tanpa antre manual."
+                : "Policy active: Remote WFA or leaves ≤ 2 days (attendance ≥ 95%) are auto-approved instantly."
+              : isId
+              ? "Seluruh pengajuan diteruskan ke antrean persetujuan Manager & HR."
+              : "Requests route to Manager & HR approval queue."}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <select
               value={leaveType}
               onChange={(e) => setLeaveType(e.target.value as LeaveRequest["type"])}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs"
+              className="px-3 py-2 rounded-xl hr-input text-xs font-semibold"
             >
               <option value="Annual Leave">Annual Leave</option>
               <option value="Remote WFA">Remote WFA</option>
@@ -203,13 +291,13 @@ export default function AttendancePage() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs"
+              className="px-3 py-2 rounded-xl hr-input text-xs"
             />
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs"
+              className="px-3 py-2 rounded-xl hr-input text-xs"
             />
           </div>
           <input
@@ -217,7 +305,7 @@ export default function AttendancePage() {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder={isId ? "Alasan pengajuan cuti / kerja remote..." : "Reason for leave or remote work..."}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs"
+            className="w-full px-3.5 py-2.5 rounded-xl hr-input text-xs"
           />
           <button
             type="submit"
@@ -230,13 +318,19 @@ export default function AttendancePage() {
       </div>
 
       {/* Attendance Log Table */}
-      <div className="glass-card rounded-2xl p-5 overflow-x-auto">
-        <h2 className="text-base font-bold mb-4 flex items-center gap-2">
-          <Smartphone className="w-4 h-4 text-cyan-400" />
-          {isId ? "Rekap Kehadiran Live Hari Ini" : "Today's Live Attendance Feed"}
+      <div className="hr-card rounded-2xl p-5 overflow-x-auto">
+        <h2 className="text-base font-extrabold mb-4 flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+          {isEss
+            ? isId
+              ? "Riwayat Kehadiran Saya"
+              : "My Attendance Feed"
+            : isId
+            ? "Rekap Kehadiran Live Hari Ini"
+            : "Today's Live Attendance Feed"}
         </h2>
         <table className="w-full text-left text-xs min-w-[680px]">
-          <thead className="text-slate-400 border-b border-slate-800">
+          <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
             <tr>
               <th className="py-2.5 px-3">Employee</th>
               <th className="py-2.5 px-3">Clock In / Out</th>
@@ -246,28 +340,28 @@ export default function AttendancePage() {
               <th className="py-2.5 px-3 text-right">Action</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/60">
-            {attendance.map((rec) => (
-              <tr key={rec.id} className="hover:bg-slate-900/40">
+          <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+            {visibleAttendance.map((rec) => (
+              <tr key={rec.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                 <td className="py-3 px-3">
                   <div className="font-bold">{rec.employeeName}</div>
-                  <div className="text-[11px] text-slate-400">{rec.department}</div>
+                  <div className="text-[11px] hr-muted">{rec.department}</div>
                 </td>
                 <td className="py-3 px-3 font-mono">
-                  <span className="text-emerald-400">{rec.clockIn}</span>
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">{rec.clockIn}</span>
                   {" → "}
-                  <span className="text-slate-300">{rec.clockOut || "Active"}</span>
+                  <span className="hr-muted">{rec.clockOut || "Active"}</span>
                 </td>
-                <td className="py-3 px-3 text-slate-300 max-w-xs truncate">{rec.location}</td>
-                <td className="py-3 px-3 text-slate-400">{rec.device}</td>
+                <td className="py-3 px-3 max-w-xs truncate">{rec.location}</td>
+                <td className="py-3 px-3 hr-muted">{rec.device}</td>
                 <td className="py-3 px-3">
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                       rec.status === "On Time"
-                        ? "bg-emerald-500/15 text-emerald-300"
+                        ? "badge-success"
                         : rec.status === "Remote"
-                        ? "bg-cyan-500/15 text-cyan-300"
-                        : "bg-amber-500/15 text-amber-300"
+                        ? "badge-info"
+                        : "badge-warning"
                     }`}
                   >
                     {rec.status}
@@ -276,13 +370,14 @@ export default function AttendancePage() {
                 <td className="py-3 px-3 text-right">
                   {!rec.clockOut ? (
                     <button
+                      type="button"
                       onClick={() => clockOutEmployee(rec.id)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold"
+                      className="hr-btn-secondary px-2.5 py-1 rounded-lg text-xs font-semibold"
                     >
                       Clock Out
                     </button>
                   ) : (
-                    <span className="text-slate-500 font-mono">{rec.workHours}h</span>
+                    <span className="hr-muted font-mono">{rec.workHours}h</span>
                   )}
                 </td>
               </tr>
@@ -292,17 +387,28 @@ export default function AttendancePage() {
       </div>
 
       {/* Weekly Interactive Shift Roster Matrix */}
-      <div className="glass-card rounded-2xl p-5 overflow-x-auto space-y-3">
+      <div className="hr-card rounded-2xl p-5 overflow-x-auto space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-base font-bold flex items-center gap-2">
-              <Clock className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
-              {isId ? "Jadwal Shift Mingguan (Klik sel untuk ubah shift)" : "Weekly Shift Roster Matrix (Click any cell to cycle)"}
+            <h2 className="text-base font-extrabold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              {canManageRoster
+                ? isId
+                  ? "Jadwal Shift Mingguan (Klik sel untuk ubah shift)"
+                  : "Weekly Shift Roster Matrix (Click any cell to cycle)"
+                : isId
+                ? "Jadwal Shift Mingguan Tim (Mode Baca-Saja)"
+                : "Weekly Team Shift Roster (Read-Only View)"}
             </h2>
             <p className="text-[11px] hr-muted">
               REG (08:00–17:00) · FLEX (10:00–19:00) · REM (Remote WFA) · NIGHT (22:00–06:00) · OFF
             </p>
           </div>
+          {!canManageRoster && (
+            <span className="badge-info px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+              Read-Only ({activeRole})
+            </span>
+          )}
         </div>
         <table className="w-full text-left text-xs min-w-[680px]">
           <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
@@ -323,20 +429,23 @@ export default function AttendancePage() {
                 {row.days.map((code, dayIdx) => {
                   const badgeStyle =
                     code === "REG"
-                      ? "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30"
+                      ? "badge-info"
                       : code === "REM"
-                      ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30"
+                      ? "badge-success"
                       : code === "FLEX"
-                      ? "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-500/15 dark:text-cyan-300 dark:border-sky-500/30"
+                      ? "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30"
                       : code === "NIGHT"
-                      ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30"
-                      : "bg-slate-200/80 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-transparent";
+                      ? "badge-warning"
+                      : "hr-subtle hr-muted";
                   return (
                     <td key={dayIdx} className="py-2 px-1.5 text-center">
                       <button
                         type="button"
-                        onClick={() => cycleShiftCell(row.employeeId, dayIdx)}
-                        className={`w-full py-1.5 rounded-lg border text-[10px] font-mono font-bold transition hover:scale-105 ${badgeStyle}`}
+                        disabled={!canManageRoster}
+                        onClick={() => canManageRoster && cycleShiftCell(row.employeeId, dayIdx)}
+                        className={`w-full py-1.5 rounded-lg border text-[10px] font-mono font-bold transition ${
+                          canManageRoster ? "hover:scale-105 cursor-pointer" : "cursor-default"
+                        } ${badgeStyle}`}
                       >
                         {code}
                       </button>
@@ -350,53 +459,65 @@ export default function AttendancePage() {
       </div>
 
       {/* Leave Approvals Automation Queue */}
-      <div className="glass-card rounded-2xl p-5 space-y-3">
-        <h2 className="text-base font-bold flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-amber-400" />
-          {isId ? "Antrean Persetujuan Cuti (Auto-Notifikasi WA/Email)" : "Leave Approval Queue (Auto WA/Email Notification)"}
+      <div className="hr-card rounded-2xl p-5 space-y-3">
+        <h2 className="text-base font-extrabold flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-amber-500" />
+          {isEss
+            ? isId
+              ? `Status Pengajuan Cuti & WFA Saya (${visibleLeaves.length})`
+              : `My Leave & WFA Requests (${visibleLeaves.length})`
+            : isId
+            ? "Antrean Persetujuan Cuti (Auto-Notifikasi WA/Email)"
+            : "Leave Approval Queue (Auto WA/Email Notification)"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {leaves.map((lv) => (
+          {visibleLeaves.map((lv) => (
             <div
               key={lv.id}
-              className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between gap-3"
+              className="p-4 rounded-xl hr-subtle flex flex-col justify-between gap-3"
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-bold text-sm">{lv.employeeName}</span>
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                       lv.status === "Approved"
-                        ? "bg-emerald-500/15 text-emerald-300"
+                        ? "badge-success"
                         : lv.status === "Rejected"
-                        ? "bg-rose-500/15 text-rose-300"
-                        : "bg-amber-500/15 text-amber-300"
+                        ? "badge-danger"
+                        : "badge-warning"
                     }`}
                   >
                     {lv.status}
                   </span>
                 </div>
-                <div className="text-xs text-cyan-400 font-semibold mt-0.5">
+                <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
                   {lv.type} · {lv.days} {isId ? "Hari" : "Days"} ({lv.startDate} → {lv.endDate})
                 </div>
-                <p className="text-xs text-slate-400 mt-1.5">{lv.reason}</p>
+                <p className="text-xs hr-muted mt-1.5">{lv.reason}</p>
               </div>
-              <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
-                {lv.status === "Pending" ? (
+              <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+                {lv.status === "Pending" && canApproveLeave ? (
                   <>
                     <button
+                      type="button"
                       onClick={() => decideLeaveRequest(lv.id, "Approved")}
                       className="flex-1 btn-emerald py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" /> {isId ? "Setujui" : "Approve"}
                     </button>
                     <button
+                      type="button"
                       onClick={() => decideLeaveRequest(lv.id, "Rejected")}
-                      className="flex-1 py-2 rounded-lg text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 flex items-center justify-center gap-1"
+                      className="flex-1 py-2 rounded-lg text-xs font-bold badge-danger flex items-center justify-center gap-1"
                     >
                       <XCircle className="w-3.5 h-3.5" /> {isId ? "Tolak" : "Reject"}
                     </button>
                   </>
+                ) : lv.status === "Pending" ? (
+                  <span className="text-[11px] hr-muted font-semibold">
+                    {isId ? "Menunggu persetujuan Manager / HR" : "Awaiting Manager / HR approval"}
+                  </span>
                 ) : (
                   <a
                     href={`https://wa.me/${lv.employeePhone}?text=${encodeURIComponent(
@@ -404,10 +525,10 @@ export default function AttendancePage() {
                     )}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/12 text-emerald-300 border border-emerald-500/30 flex items-center justify-center gap-1.5"
+                    className="w-full py-1.5 rounded-lg text-xs font-semibold hr-btn-secondary flex items-center justify-center gap-1.5"
                   >
-                    <MessageCircle className="w-3.5 h-3.5" />
-                    {isId ? "Kirim Konfirmasi WhatsApp" : "Send WhatsApp Receipt"}
+                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                    {isId ? "Kirim Bukti WhatsApp" : "Send WhatsApp Receipt"}
                   </a>
                 )}
               </div>
