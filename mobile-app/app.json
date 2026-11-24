@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "AetherHR Mobile",
+    "slug": "aetherhr-mobile",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#060913"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "global.aetherhr.mobile"
+    },
+    "android": {
+      "package": "global.aetherhr.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#060913"
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "https://hris-automation.vercel.app"
+    }
+  }
+}
