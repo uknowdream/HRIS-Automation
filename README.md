@@ -25,11 +25,14 @@
 - **Universal Webhooks (`/api/webhooks/trigger` & `/api/webhooks/inbound`)** — Real `HMAC-SHA256` signed outbound POSTs (Zapier, Make, n8n, Slack, MS Teams, custom ERP) and inbound REST API receiver.
 - **Calendar Automation (`/api/calendar/ics`)** — RFC-5545 `.ics` calendar invitations for Google Calendar, Outlook, and Apple Calendar.
 
-### 3. Complete Enterprise HRIS Modules
-- **Executive Command Center (`/`)** — Live KPIs, SVG telemetry charts, global entity distribution, and automation feed.
+### 3. Complete Enterprise HRIS Modules (13 Modules · Executive Light & Obsidian Dark UI)
+- **Executive HRIS Dashboard (`/`)** — Action Center Approvals Inbox (Leave/Expense/Contract), Company Announcements, Dept Distribution, Top Psychometric Talent, & Automation Stream.
 - **Global People Directory & Org Chart (`/employees`)** — Multi-country 360° profiles, org hierarchy, CSV export & zero-touch onboarding.
-- **GPS Geofence Attendance & Leave (`/attendance`)** — Live HTML5 Geolocation check-in/out & leave approval auto-notifications.
+- **Digital Contracts, E-Signature & Announcements (`/documents`)** — Interactive HTML5 Canvas E-Signature Pad with SHA-256 verification hash, PKWT expiry alerts & company broadcasts.
+- **30-60-90 Onboarding & Corporate LMS (`/learning`)** — Cross-functional onboarding task pipelines & printable compliance certificates.
+- **GPS Geofence Attendance, Shift Roster & Leave (`/attendance`)** — Live HTML5 Geolocation check-in/out, interactive Mon–Sun Shift Roster matrix & leave approval auto-notifications.
 - **Multi-Currency Payroll & Tax Engine (`/payroll`, `/api/payroll/calculate`)** — Indonesian **PPh 21 TER + BPJS**, Singapore **CPF**, US **FICA**, EU & UK calculations with printable digital payslips & ERP CSV export.
+- **Expense Reimbursements & IT Asset Inventory (`/finance-ops`)** — Expense claims auto-synced to Payroll + corporate laptop/device lifecycle tracking.
 - **OKRs & 9-Box Talent Matrix (`/performance`)** — Interactive talent calibration and quarterly OKR tracking.
 - **Dual Mobile App (`/mobile` PWA + `/mobile-app` React Native Expo)** — Installable Progressive Web App + standalone Expo iOS/Android project.
 

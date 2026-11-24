@@ -273,7 +273,7 @@ export default function SettingsPage() {
               {String(health.version)}
             </span>
           </div>
-          <pre className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">
+          <pre className="code-dark p-3 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 overflow-x-auto">
             {JSON.stringify(health.capabilities, null, 2)}
           </pre>
         </div>

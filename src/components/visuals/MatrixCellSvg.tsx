@@ -213,7 +213,7 @@ export function MatrixCellSvg({
       width={size}
       height={size}
       viewBox="0 0 100 100"
-      className="rounded-xl bg-slate-950/70 border border-slate-700/60"
+      className="matrix-dark-board rounded-xl bg-slate-950/90 border border-slate-700/60"
     >
       <defs>
         <pattern

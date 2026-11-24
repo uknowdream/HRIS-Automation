@@ -25,13 +25,13 @@ export function PsychometricReportView({
 }) {
   const verdictStyles: Record<AssessmentReport["recommendation"], string> = {
     STRONG_HIRE:
-      "from-emerald-500/20 to-cyan-500/20 border-emerald-500/45 text-emerald-300",
+      "from-emerald-600 via-teal-600 to-cyan-600 border-emerald-500/45 text-white",
     RECOMMENDED:
-      "from-cyan-500/20 to-indigo-500/20 border-cyan-500/45 text-cyan-300",
+      "from-indigo-600 via-blue-600 to-cyan-600 border-indigo-500/45 text-white",
     CONSIDER:
-      "from-amber-500/20 to-orange-500/20 border-amber-500/45 text-amber-300",
+      "from-amber-600 via-orange-600 to-amber-500 border-amber-500/45 text-white",
     NOT_RECOMMENDED:
-      "from-rose-500/20 to-pink-500/20 border-rose-500/45 text-rose-300",
+      "from-rose-600 via-pink-600 to-rose-500 border-rose-500/45 text-white",
   };
 
   const minsUsed = Math.max(1, Math.round(report.durationUsedSec / 60));

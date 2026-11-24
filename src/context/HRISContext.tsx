@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type {
+  ActiveRole,
   AssessmentReport,
   AttendanceRecord,
   AutomationLog,
@@ -9,24 +10,39 @@ import type {
   Candidate,
   CandidateInvitation,
   CandidateStage,
+  CompanyAnnouncement,
+  CompanyAsset,
   Employee,
+  ExpenseClaim,
+  HRDocument,
   IntegrationSettings,
+  LearningCourse,
   LeaveRequest,
   Locale,
   OKRItem,
+  OnboardingChecklist,
   PayrollRun,
+  ShiftCode,
+  ShiftRosterRow,
   ThemeMode,
 } from "@/types/hris";
 import {
   buildSeedPayrollRun,
   DEFAULT_SETTINGS,
+  SEED_ANNOUNCEMENTS,
+  SEED_ASSETS,
   SEED_ATTENDANCE,
   SEED_CANDIDATES,
+  SEED_CHECKLISTS,
+  SEED_COURSES,
+  SEED_DOCUMENTS,
   SEED_EMPLOYEES,
+  SEED_EXPENSES,
   SEED_LEAVES,
   SEED_LOGS,
   SEED_OKRS,
   SEED_REPORTS,
+  SEED_SHIFT_ROSTER,
   SEED_WORKFLOWS,
 } from "@/lib/seed-data";
 
@@ -53,12 +69,21 @@ interface HRISContextValue {
   theme: ThemeMode;
   setTheme: (t: ThemeMode) => void;
   toggleTheme: () => void;
+  activeRole: ActiveRole;
+  setActiveRole: (r: ActiveRole) => void;
 
   // Domain State
   employees: Employee[];
   attendance: AttendanceRecord[];
+  shiftRoster: ShiftRosterRow[];
   leaves: LeaveRequest[];
   payrollRuns: PayrollRun[];
+  expenses: ExpenseClaim[];
+  assets: CompanyAsset[];
+  documents: HRDocument[];
+  announcements: CompanyAnnouncement[];
+  checklists: OnboardingChecklist[];
+  courses: LearningCourse[];
   candidates: Candidate[];
   invitations: CandidateInvitation[];
   reports: AssessmentReport[];
@@ -74,11 +99,25 @@ interface HRISContextValue {
 
   clockInEmployee: (record: Omit<AttendanceRecord, "id">) => void;
   clockOutEmployee: (recordId: string) => void;
+  cycleShiftCell: (employeeId: string, dayIndex: number) => void;
 
   submitLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => void;
   decideLeaveRequest: (id: string, decision: "Approved" | "Rejected") => void;
 
   addPayrollRun: (run: PayrollRun) => void;
+
+  submitExpenseClaim: (claim: Omit<ExpenseClaim, "id" | "status">) => void;
+  decideExpenseClaim: (id: string, decision: "Approved" | "Rejected") => void;
+
+  addAsset: (asset: Omit<CompanyAsset, "id">) => void;
+  assignAsset: (assetId: string, employeeId: string | null, employeeName: string, department: string) => void;
+
+  signDocument: (docId: string, signerName: string, signatureDataUrl: string) => void;
+  addDocument: (doc: Omit<HRDocument, "id">) => void;
+  publishAnnouncement: (ann: Omit<CompanyAnnouncement, "id" | "publishedAt">) => void;
+
+  toggleChecklistTask: (checklistId: string, taskId: string) => void;
+  completeCourse: (courseId: string) => void;
 
   addCandidate: (cand: Omit<Candidate, "id" | "appliedAt" | "stage">) => Candidate;
   updateCandidateStage: (id: string, stage: CandidateStage) => void;
@@ -93,42 +132,50 @@ interface HRISContextValue {
   updateSettings: (patch: Partial<IntegrationSettings>) => void;
   resetDemoData: () => void;
 
-  // Quick Invite Modal Global Control
   inviteModalOpen: boolean;
   invitePrefill: QuickInvitePrefill | null;
   openInviteModal: (prefill?: QuickInvitePrefill) => void;
   closeInviteModal: () => void;
 
-  // Toasts
   toasts: ToastItem[];
   pushToast: (toast: Omit<ToastItem, "id">) => void;
   dismissToast: (id: string) => void;
 }
 
-const STORAGE_KEY = "aetherhr_enterprise_state_v2";
+const STORAGE_KEY = "aetherhr_enterprise_state_v3";
 
 const HRISContext = createContext<HRISContextValue | null>(null);
 
 const AVATAR_GRADIENTS = [
-  "from-cyan-500 to-indigo-600",
+  "from-indigo-500 to-blue-600",
   "from-emerald-500 to-teal-600",
-  "from-indigo-500 to-purple-600",
+  "from-violet-500 to-purple-600",
   "from-amber-500 to-orange-600",
   "from-rose-500 to-pink-600",
-  "from-sky-500 to-blue-600",
+  "from-sky-500 to-cyan-600",
 ];
+
+const SHIFT_ORDER: ShiftCode[] = ["REG", "FLEX", "REM", "NIGHT", "OFF"];
 
 export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [locale, setLocale] = useState<Locale>("id");
-  const [theme, setTheme] = useState<ThemeMode>("dark");
+  const [theme, setTheme] = useState<ThemeMode>("light");
+  const [activeRole, setActiveRole] = useState<ActiveRole>("HR Admin");
 
   const [employees, setEmployees] = useState<Employee[]>(SEED_EMPLOYEES);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(SEED_ATTENDANCE);
+  const [shiftRoster, setShiftRoster] = useState<ShiftRosterRow[]>(SEED_SHIFT_ROSTER);
   const [leaves, setLeaves] = useState<LeaveRequest[]>(SEED_LEAVES);
   const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(() => [
     buildSeedPayrollRun(SEED_EMPLOYEES),
   ]);
+  const [expenses, setExpenses] = useState<ExpenseClaim[]>(SEED_EXPENSES);
+  const [assets, setAssets] = useState<CompanyAsset[]>(SEED_ASSETS);
+  const [documents, setDocuments] = useState<HRDocument[]>(SEED_DOCUMENTS);
+  const [announcements, setAnnouncements] = useState<CompanyAnnouncement[]>(SEED_ANNOUNCEMENTS);
+  const [checklists, setChecklists] = useState<OnboardingChecklist[]>(SEED_CHECKLISTS);
+  const [courses, setCourses] = useState<LearningCourse[]>(SEED_COURSES);
   const [candidates, setCandidates] = useState<Candidate[]>(SEED_CANDIDATES);
   const [invitations, setInvitations] = useState<CandidateInvitation[]>([]);
   const [reports, setReports] = useState<AssessmentReport[]>(SEED_REPORTS);
@@ -141,18 +188,25 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [invitePrefill, setInvitePrefill] = useState<QuickInvitePrefill | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  // Hydrate from localStorage safely
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.locale) setLocale(parsed.locale);
-        if (parsed.theme) setTheme(parsed.theme);
+        if (parsed.theme === "dark" || parsed.theme === "light") setTheme(parsed.theme);
+        if (parsed.activeRole) setActiveRole(parsed.activeRole);
         if (Array.isArray(parsed.employees) && parsed.employees.length) setEmployees(parsed.employees);
         if (Array.isArray(parsed.attendance)) setAttendance(parsed.attendance);
+        if (Array.isArray(parsed.shiftRoster)) setShiftRoster(parsed.shiftRoster);
         if (Array.isArray(parsed.leaves)) setLeaves(parsed.leaves);
         if (Array.isArray(parsed.payrollRuns) && parsed.payrollRuns.length) setPayrollRuns(parsed.payrollRuns);
+        if (Array.isArray(parsed.expenses)) setExpenses(parsed.expenses);
+        if (Array.isArray(parsed.assets)) setAssets(parsed.assets);
+        if (Array.isArray(parsed.documents)) setDocuments(parsed.documents);
+        if (Array.isArray(parsed.announcements)) setAnnouncements(parsed.announcements);
+        if (Array.isArray(parsed.checklists)) setChecklists(parsed.checklists);
+        if (Array.isArray(parsed.courses)) setCourses(parsed.courses);
         if (Array.isArray(parsed.candidates)) setCandidates(parsed.candidates);
         if (Array.isArray(parsed.invitations)) setInvitations(parsed.invitations);
         if (Array.isArray(parsed.reports)) setReports(parsed.reports);
@@ -167,7 +221,6 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     setHydrated(true);
   }, []);
 
-  // Persist to localStorage
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -176,10 +229,18 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         JSON.stringify({
           locale,
           theme,
+          activeRole,
           employees,
           attendance,
+          shiftRoster,
           leaves,
           payrollRuns,
+          expenses,
+          assets,
+          documents,
+          announcements,
+          checklists,
+          courses,
           candidates,
           invitations,
           reports,
@@ -190,16 +251,24 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         })
       );
     } catch {
-      // Ignore quota errors
+      // Ignore quota
     }
   }, [
     hydrated,
     locale,
     theme,
+    activeRole,
     employees,
     attendance,
+    shiftRoster,
     leaves,
     payrollRuns,
+    expenses,
+    assets,
+    documents,
+    announcements,
+    checklists,
+    courses,
     candidates,
     invitations,
     reports,
@@ -209,13 +278,13 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     settings,
   ]);
 
-  // Apply theme class to document root
+  // Apply dark class only when dark mode is chosen (default is crisp Executive Light!)
   useEffect(() => {
     const root = document.documentElement;
-    if (theme === "light") {
-      root.classList.add("light");
+    if (theme === "dark") {
+      root.classList.add("dark");
     } else {
-      root.classList.remove("light");
+      root.classList.remove("dark");
     }
   }, [theme]);
 
@@ -265,7 +334,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: `${newEmp.name} (${newEmp.email})`,
         status: "Success",
         latencyMs: 88,
-        detail: `Zero-Touch Onboarding triggered: Digital ID ${newEmp.employeeCode}, Welcome Pack & Mobile PWA access provisioned.`,
+        detail: `Zero-Touch Onboarding triggered: Digital ID ${newEmp.employeeCode}, 30-60-90 checklist & Mobile PWA access provisioned.`,
       });
       pushToast({
         title: locale === "id" ? "Karyawan Baru Ditambahkan" : "Employee Onboarded",
@@ -320,6 +389,18 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     },
     [locale, pushToast]
   );
+
+  const cycleShiftCell = useCallback((employeeId: string, dayIndex: number) => {
+    setShiftRoster((prev) =>
+      prev.map((row) => {
+        if (row.employeeId !== employeeId) return row;
+        const nextDays = [...row.days] as ShiftRosterRow["days"];
+        const curIdx = SHIFT_ORDER.indexOf(nextDays[dayIndex]);
+        nextDays[dayIndex] = SHIFT_ORDER[(curIdx + 1) % SHIFT_ORDER.length];
+        return { ...row, days: nextDays };
+      })
+    );
+  }, []);
 
   const submitLeaveRequest = useCallback(
     (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => {
@@ -392,6 +473,209 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [locale, logAutomation, pushToast]
   );
 
+  const submitExpenseClaim = useCallback(
+    (claim: Omit<ExpenseClaim, "id" | "status">) => {
+      const created: ExpenseClaim = { ...claim, id: `exp_${Date.now()}`, status: "Pending" };
+      setExpenses((prev) => [created, ...prev]);
+      logAutomation({
+        event: "expense.submitted",
+        channel: "System",
+        recipient: claim.employeeName,
+        status: "Success",
+        latencyMs: 48,
+        detail: `${claim.category} claim (${claim.currency} ${claim.amount.toLocaleString("en-US")}) submitted for finance review.`,
+      });
+      pushToast({
+        title: locale === "id" ? "Klaim Reimburse Diajukan" : "Expense Claim Submitted",
+        description: `${claim.employeeName} — ${claim.category}`,
+        variant: "info",
+      });
+    },
+    [locale, logAutomation, pushToast]
+  );
+
+  const decideExpenseClaim = useCallback(
+    (id: string, decision: "Approved" | "Rejected") => {
+      const target = expenses.find((e) => e.id === id);
+      setExpenses((prev) =>
+        prev.map((e) =>
+          e.id === id
+            ? { ...e, status: decision, syncedToPayroll: decision === "Approved" }
+            : e
+        )
+      );
+      if (target) {
+        logAutomation({
+          event: "expense.approved",
+          channel: "Email",
+          recipient: target.employeeName,
+          status: "Success",
+          latencyMs: 96,
+          detail:
+            decision === "Approved"
+              ? `Reimbursement approved & auto-queued into next Payroll cycle (${target.currency} ${target.amount.toLocaleString("en-US")}).`
+              : `Reimbursement claim rejected — notification sent.`,
+        });
+        pushToast({
+          title:
+            decision === "Approved"
+              ? locale === "id"
+                ? "Reimburse Disetujui & Sync ke Payroll"
+                : "Expense Approved & Synced to Payroll"
+              : locale === "id"
+              ? "Reimburse Ditolak"
+              : "Expense Rejected",
+          description: target.employeeName,
+          variant: decision === "Approved" ? "success" : "warning",
+        });
+      }
+    },
+    [expenses, locale, logAutomation, pushToast]
+  );
+
+  const addAsset = useCallback(
+    (asset: Omit<CompanyAsset, "id">) => {
+      setAssets((prev) => [{ ...asset, id: `ast_${Date.now()}` }, ...prev]);
+      pushToast({
+        title: locale === "id" ? "Aset IT Ditambahkan" : "IT Asset Registered",
+        description: `${asset.assetTag} — ${asset.name}`,
+        variant: "success",
+      });
+    },
+    [locale, pushToast]
+  );
+
+  const assignAsset = useCallback(
+    (assetId: string, employeeId: string | null, employeeName: string, department: string) => {
+      setAssets((prev) =>
+        prev.map((a) =>
+          a.id === assetId
+            ? {
+                ...a,
+                assignedToId: employeeId,
+                assignedToName: employeeName,
+                department,
+                status: employeeId ? "Assigned" : "In Stock",
+                assignedDate: new Date().toISOString().slice(0, 10),
+              }
+            : a
+        )
+      );
+      pushToast({
+        title: locale === "id" ? "Status Aset Diperbarui" : "Asset Assignment Updated",
+        description: employeeId ? `Assigned to ${employeeName}` : "Returned to HQ Vault",
+        variant: "info",
+      });
+    },
+    [locale, pushToast]
+  );
+
+  const signDocument = useCallback(
+    (docId: string, signerName: string, signatureDataUrl: string) => {
+      const hashHex = Array.from({ length: 24 }, (_, i) =>
+        ((docId.charCodeAt(i % docId.length) + signerName.length * (i + 7)) % 16).toString(16)
+      ).join("");
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === docId
+            ? {
+                ...d,
+                status: "Signed",
+                signedBy: signerName,
+                signedAt: new Date().toISOString(),
+                signatureDataUrl,
+                verificationHash: `sha256:${hashHex}`,
+              }
+            : d
+        )
+      );
+      logAutomation({
+        event: "contract.signed",
+        channel: "Email",
+        recipient: signerName,
+        status: "Success",
+        latencyMs: 118,
+        detail: `Digital E-Signature sealed with SHA-256 verification hash (${hashHex.slice(0, 12)}...).`,
+      });
+      pushToast({
+        title: locale === "id" ? "Dokumen Resmi Ditandatangani (E-Sign)" : "Document E-Signed & Sealed",
+        description: `Signed by ${signerName} · SHA-256 Verified`,
+        variant: "success",
+      });
+    },
+    [locale, logAutomation, pushToast]
+  );
+
+  const addDocument = useCallback(
+    (doc: Omit<HRDocument, "id">) => {
+      setDocuments((prev) => [{ ...doc, id: `doc_${Date.now()}` }, ...prev]);
+      pushToast({
+        title: locale === "id" ? "Dokumen Kontrak Dibuat" : "HR Contract Created",
+        description: doc.title,
+        variant: "success",
+      });
+    },
+    [locale, pushToast]
+  );
+
+  const publishAnnouncement = useCallback(
+    (ann: Omit<CompanyAnnouncement, "id" | "publishedAt">) => {
+      setAnnouncements((prev) => [
+        { ...ann, id: `ann_${Date.now()}`, publishedAt: new Date().toISOString() },
+        ...prev,
+      ]);
+      logAutomation({
+        event: "announcement.broadcast",
+        channel: "WhatsApp",
+        recipient: `All ${employees.length} Global Employees`,
+        status: "Success",
+        latencyMs: 134,
+        detail: `Broadcasted "${ann.title}" via ${ann.channels.join(", ")}`,
+      });
+      pushToast({
+        title: locale === "id" ? "Pengumuman Dikirim ke Semua Karyawan" : "Announcement Broadcasted",
+        description: ann.title,
+        variant: "success",
+      });
+    },
+    [employees.length, locale, logAutomation, pushToast]
+  );
+
+  const toggleChecklistTask = useCallback((checklistId: string, taskId: string) => {
+    setChecklists((prev) =>
+      prev.map((c) =>
+        c.id === checklistId
+          ? {
+              ...c,
+              tasks: c.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t)),
+            }
+          : c
+      )
+    );
+  }, []);
+
+  const completeCourse = useCallback(
+    (courseId: string) => {
+      setCourses((prev) =>
+        prev.map((c) =>
+          c.id === courseId
+            ? {
+                ...c,
+                completedByUser: true,
+                completionRate: Math.min(100, c.completionRate + 12),
+              }
+            : c
+        )
+      );
+      pushToast({
+        title: locale === "id" ? "Sertifikat LMS Diterbitkan!" : "LMS Certificate Issued!",
+        description: "Verified training credential synced to employee profile.",
+        variant: "success",
+      });
+    },
+    [locale, pushToast]
+  );
+
   const addCandidate: HRISContextValue["addCandidate"] = useCallback(
     (candInput) => {
       const created: Candidate = {
@@ -407,7 +691,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: `${created.name} (${created.role})`,
         status: "Success",
         latencyMs: 38,
-        detail: `Candidate entered ATS pipeline from ${created.source}. Ready for instant WA/Email test invite.`,
+        detail: `Candidate entered ATS pipeline from ${created.source}.`,
       });
       return created;
     },
@@ -521,9 +805,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recipient: report.candidateName,
         status: "Success",
         latencyMs: 98,
-        detail: `IQ ${report.estimatedIq} (${report.globalPercentile}th pct) | DISC ${report.disc.primary}-${report.disc.secondary} | Integrity ${report.integrityScore}%${
-          autoAdvance ? " — Auto-Advanced to Interview!" : ""
-        }`,
+        detail: `IQ ${report.estimatedIq} (${report.globalPercentile}th pct) | DISC ${report.disc.primary}-${report.disc.secondary} | Integrity ${report.integrityScore}%`,
       });
     },
     [logAutomation, settings.autoAdvanceThresholdIq]
@@ -538,13 +820,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const addWorkflow: HRISContextValue["addWorkflow"] = useCallback(
     (wf) => {
       setWorkflows((prev) => [
-        {
-          ...wf,
-          id: `wf_${Date.now()}`,
-          runsCount: 0,
-          successRate: 100,
-          lastRunAt: null,
-        },
+        { ...wf, id: `wf_${Date.now()}`, runsCount: 0, successRate: 100, lastRunAt: null },
         ...prev,
       ]);
       pushToast({
@@ -592,8 +868,15 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
     setEmployees(SEED_EMPLOYEES);
     setAttendance(SEED_ATTENDANCE);
+    setShiftRoster(SEED_SHIFT_ROSTER);
     setLeaves(SEED_LEAVES);
     setPayrollRuns([buildSeedPayrollRun(SEED_EMPLOYEES)]);
+    setExpenses(SEED_EXPENSES);
+    setAssets(SEED_ASSETS);
+    setDocuments(SEED_DOCUMENTS);
+    setAnnouncements(SEED_ANNOUNCEMENTS);
+    setChecklists(SEED_CHECKLISTS);
+    setCourses(SEED_COURSES);
     setCandidates(SEED_CANDIDATES);
     setInvitations([]);
     setReports(SEED_REPORTS);
@@ -619,7 +902,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
   }, []);
 
   return (
@@ -631,10 +914,19 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         theme,
         setTheme,
         toggleTheme,
+        activeRole,
+        setActiveRole,
         employees,
         attendance,
+        shiftRoster,
         leaves,
         payrollRuns,
+        expenses,
+        assets,
+        documents,
+        announcements,
+        checklists,
+        courses,
         candidates,
         invitations,
         reports,
@@ -647,9 +939,19 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         deleteEmployee,
         clockInEmployee,
         clockOutEmployee,
+        cycleShiftCell,
         submitLeaveRequest,
         decideLeaveRequest,
         addPayrollRun,
+        submitExpenseClaim,
+        decideExpenseClaim,
+        addAsset,
+        assignAsset,
+        signDocument,
+        addDocument,
+        publishAnnouncement,
+        toggleChecklistTask,
+        completeCourse,
         addCandidate,
         updateCandidateStage,
         recordInvitation,

@@ -21,9 +21,11 @@ export default function AttendancePage() {
     locale,
     employees,
     attendance,
+    shiftRoster,
     leaves,
     clockInEmployee,
     clockOutEmployee,
+    cycleShiftCell,
     submitLeaveRequest,
     decideLeaveRequest,
   } = useHRIS();
@@ -283,6 +285,64 @@ export default function AttendancePage() {
                     <span className="text-slate-500 font-mono">{rec.workHours}h</span>
                   )}
                 </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Weekly Interactive Shift Roster Matrix */}
+      <div className="glass-card rounded-2xl p-5 overflow-x-auto space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-bold flex items-center gap-2">
+              <Clock className="w-4 h-4 text-indigo-600 dark:text-cyan-400" />
+              {isId ? "Jadwal Shift Mingguan (Klik sel untuk ubah shift)" : "Weekly Shift Roster Matrix (Click any cell to cycle)"}
+            </h2>
+            <p className="text-[11px] hr-muted">
+              REG (08:00–17:00) · FLEX (10:00–19:00) · REM (Remote WFA) · NIGHT (22:00–06:00) · OFF
+            </p>
+          </div>
+        </div>
+        <table className="w-full text-left text-xs min-w-[680px]">
+          <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
+            <tr>
+              <th className="py-2 px-3">Employee</th>
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+                <th key={d} className="py-2 px-2 text-center">{d}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+            {shiftRoster.map((row) => (
+              <tr key={row.employeeId}>
+                <td className="py-2.5 px-3">
+                  <div className="font-bold">{row.employeeName}</div>
+                  <div className="text-[10px] hr-muted">{row.department}</div>
+                </td>
+                {row.days.map((code, dayIdx) => {
+                  const badgeStyle =
+                    code === "REG"
+                      ? "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30"
+                      : code === "REM"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30"
+                      : code === "FLEX"
+                      ? "bg-sky-100 text-sky-800 border-sky-200 dark:bg-sky-500/15 dark:text-cyan-300 dark:border-sky-500/30"
+                      : code === "NIGHT"
+                      ? "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30"
+                      : "bg-slate-200/80 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-transparent";
+                  return (
+                    <td key={dayIdx} className="py-2 px-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => cycleShiftCell(row.employeeId, dayIdx)}
+                        className={`w-full py-1.5 rounded-lg border text-[10px] font-mono font-bold transition hover:scale-105 ${badgeStyle}`}
+                      >
+                        {code}
+                      </button>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

@@ -1,5 +1,6 @@
 export type Locale = "id" | "en";
-export type ThemeMode = "dark" | "light";
+export type ThemeMode = "light" | "dark";
+export type ActiveRole = "HR Admin" | "Department Manager" | "Employee";
 
 export type Currency = "IDR" | "USD" | "SGD" | "EUR" | "GBP";
 
@@ -22,6 +23,7 @@ export interface Employee {
   employmentType: EmploymentType;
   status: EmployeeStatus;
   joinDate: string;
+  birthday?: string; // MM-DD
   managerName: string;
   baseSalary: number;
   allowances: number;
@@ -49,6 +51,15 @@ export interface AttendanceRecord {
   geofenceVerified: boolean;
   workHours: number;
   device: "Web Portal" | "Mobile App (iOS)" | "Mobile App (Android)" | "Biometric Hub";
+}
+
+export type ShiftCode = "REG" | "FLEX" | "REM" | "NIGHT" | "OFF";
+
+export interface ShiftRosterRow {
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  days: [ShiftCode, ShiftCode, ShiftCode, ShiftCode, ShiftCode, ShiftCode, ShiftCode]; // Mon..Sun
 }
 
 export interface LeaveRequest {
@@ -79,7 +90,7 @@ export interface PayslipItem {
   allowances: number;
   overtimePay: number;
   grossSalary: number;
-  incomeTax: number; // PPh 21 TER or international withholding
+  incomeTax: number;
   bpjsHealth: number;
   bpjsEmployment: number;
   otherDeductions: number;
@@ -92,7 +103,7 @@ export interface PayslipItem {
 
 export interface PayrollRun {
   id: string;
-  period: string; // e.g., "2026-11"
+  period: string;
   label: string;
   runDate: string;
   status: "Completed" | "Draft" | "Processing";
@@ -100,6 +111,97 @@ export interface PayrollRun {
   totalGrossUSD: number;
   totalNetUSD: number;
   items: PayslipItem[];
+}
+
+// ==========================================
+// NEW V3.0 ENTERPRISE HRIS MODULES
+// ==========================================
+
+export interface ExpenseClaim {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  category: "Travel & Flights" | "Home Office & Gear" | "Medical & Wellness" | "Client Hospitality" | "Training & Cert";
+  description: string;
+  amount: number;
+  currency: Currency;
+  date: string;
+  receiptRef: string;
+  status: "Pending" | "Approved" | "Paid in Payroll" | "Rejected";
+  syncedToPayroll?: boolean;
+}
+
+export interface CompanyAsset {
+  id: string;
+  assetTag: string;
+  name: string;
+  category: "Laptop" | "Smartphone" | "Monitor" | "Access Card" | "Software Seat";
+  serialNumber: string;
+  assignedToId: string | null;
+  assignedToName: string;
+  department: string;
+  condition: "Excellent" | "Good" | "Maintenance";
+  status: "Assigned" | "In Stock" | "Pending Return";
+  purchaseValueUSD: number;
+  assignedDate: string;
+}
+
+export interface HRDocument {
+  id: string;
+  title: string;
+  docType: "PKWTT Permanent" | "PKWT Fixed-Term" | "Global EOR Contract" | "Offer Letter" | "Mutual NDA" | "Policy Handbook";
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  issueDate: string;
+  expiryDate: string | null; // null for permanent
+  status: "Signed" | "Awaiting Signature" | "Expiring Soon" | "Draft";
+  signedBy?: string;
+  signedAt?: string;
+  signatureDataUrl?: string;
+  verificationHash?: string;
+}
+
+export interface CompanyAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  category: "Policy" | "Company News" | "Payroll & Tax" | "Event";
+  author: string;
+  publishedAt: string;
+  channels: ("Portal" | "Email" | "WhatsApp" | "Mobile Push")[];
+  pinned?: boolean;
+}
+
+export interface OnboardingChecklist {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  role: string;
+  department: string;
+  type: "Onboarding (30-60-90)" | "Offboarding Exit";
+  startDate: string;
+  buddyName: string;
+  tasks: {
+    id: string;
+    phase: "Day 1" | "Week 1" | "Month 1" | "Exit";
+    title: string;
+    owner: "HR" | "IT" | "Manager" | "Employee";
+    done: boolean;
+  }[];
+}
+
+export interface LearningCourse {
+  id: string;
+  title: string;
+  category: "Compliance & Security" | "Leadership & EQ" | "AI & Automation" | "HR & Tax Law";
+  durationHours: number;
+  mandatory: boolean;
+  enrolledCount: number;
+  completionRate: number;
+  certificateCode: string;
+  completedByUser: boolean;
 }
 
 // ==========================================
@@ -121,7 +223,7 @@ export type QuestionFormat = "mcq" | "matrix" | "likert" | "disc" | "sjt";
 export interface MatrixCellSpec {
   shape: "circle" | "square" | "triangle" | "diamond" | "hexagon" | "cross" | "star" | "bar" | "none";
   count: number;
-  rotation: number; // degrees
+  rotation: number;
   fill: "solid" | "outline" | "striped" | "half";
   color: string;
   size?: "sm" | "md" | "lg";
@@ -129,36 +231,27 @@ export interface MatrixCellSpec {
 }
 
 export interface MatrixVisualSpec {
-  grid: (MatrixCellSpec | null)[]; // 9 cells, index 8 is null ("?")
-  options: MatrixCellSpec[]; // 4 visual options
+  grid: (MatrixCellSpec | null)[];
+  options: MatrixCellSpec[];
 }
 
 export interface AssessmentQuestion {
   id: string;
   category: AssessmentCategory;
   format: QuestionFormat;
-  difficulty: 1 | 2 | 3; // 1=Standard, 2=Advanced, 3=Executive
+  difficulty: 1 | 2 | 3;
   timeBudgetSec: number;
-  prompt: {
-    id: string;
-    en: string;
-  };
-  context?: {
-    id: string;
-    en: string;
-  };
+  prompt: { id: string; en: string };
+  context?: { id: string; en: string };
   options?: {
     id: string;
     label: { id: string; en: string };
     discTrait?: "D" | "I" | "S" | "C";
-    sjtScore?: number; // 1-4 weighted effectiveness
+    sjtScore?: number;
   }[];
   correctOptionId?: string;
-  explanation?: {
-    id: string;
-    en: string;
-  };
-  big5Trait?: "O" | "C" | "E" | "A" | "S"; // S = Emotional Stability (reverse of Neuroticism)
+  explanation?: { id: string; en: string };
+  big5Trait?: "O" | "C" | "E" | "A" | "S";
   big5Reverse?: boolean;
   matrixVisual?: MatrixVisualSpec;
 }
@@ -204,11 +297,10 @@ export interface AssessmentReport {
   durationAllocatedSec: number;
   totalQuestions: number;
   answeredQuestions: number;
-  // Cognitive Metrics
   cognitiveOverallPct: number;
-  estimatedIq: number; // 75 - 145
-  globalPercentile: number; // 1 - 99
-  stenScore: number; // 1 - 10
+  estimatedIq: number;
+  globalPercentile: number;
+  stenScore: number;
   domainScores: {
     category: AssessmentCategory;
     label: string;
@@ -216,7 +308,6 @@ export interface AssessmentReport {
     total: number;
     percentage: number;
   }[];
-  // Big Five OCEAN (0-100)
   bigFive: {
     openness: number;
     conscientiousness: number;
@@ -224,7 +315,6 @@ export interface AssessmentReport {
     agreeableness: number;
     emotionalStability: number;
   };
-  // DISC Profile (0-100 normalized)
   disc: {
     D: number;
     I: number;
@@ -235,13 +325,10 @@ export interface AssessmentReport {
     archetype: string;
     summary: string;
   };
-  // SJT
-  sjtScore: number; // 0-100
-  // Proctoring & Integrity
-  integrityScore: number; // 0-100
+  sjtScore: number;
+  integrityScore: number;
   tabSwitches: number;
   proctoringEvents: ProctoringEvent[];
-  // Decision
   recommendation: "STRONG_HIRE" | "RECOMMENDED" | "CONSIDER" | "NOT_RECOMMENDED";
   executiveSummary: string;
   strengths: string[];
@@ -302,10 +389,6 @@ export interface Candidate {
   notes?: string;
 }
 
-// ==========================================
-// AUTOMATION, WEBHOOKS & INTEGRATIONS
-// ==========================================
-
 export type AutomationTrigger =
   | "candidate.created"
   | "invitation.sent"
@@ -313,6 +396,8 @@ export type AutomationTrigger =
   | "assessment.high_score"
   | "leave.submitted"
   | "leave.approved"
+  | "expense.approved"
+  | "contract.signed"
   | "payroll.completed"
   | "employee.onboarded"
   | "attendance.late";
@@ -361,20 +446,17 @@ export interface IntegrationSettings {
   companyLogoText: string;
   defaultTimezone: string;
   defaultCurrency: Currency;
-  // Email
   resendApiKey: string;
   resendFromEmail: string;
   smtpHost: string;
   smtpPort: string;
   smtpUser: string;
   smtpPass: string;
-  // WhatsApp
   whatsappMode: "instant_link" | "meta_cloud" | "custom_gateway";
   whatsappAccessToken: string;
   whatsappPhoneNumberId: string;
   whatsappGatewayUrl: string;
   whatsappGatewayToken: string;
-  // Webhooks & Integrations
   primaryWebhookUrl: string;
   webhookSecret: string;
   slackWebhookUrl: string;
@@ -392,7 +474,7 @@ export interface OKRItem {
   objective: string;
   keyResults: {
     title: string;
-    progress: number; // 0-100
+    progress: number;
   }[];
   quarter: string;
   status: "On Track" | "At Risk" | "Exceeded";

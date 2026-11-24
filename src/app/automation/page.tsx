@@ -362,7 +362,7 @@ export default function AutomationStudioPage() {
               ? "Kirim kandidat dari LinkedIn, JobStreet, Google Form, n8n, atau Zapier ke endpoint ini — sistem otomatis membuat tautan tes kognitif & URL WhatsApp!"
               : "Push candidates from LinkedIn, JobStreet, Google Forms, n8n, or Zapier here — AetherHR automatically returns a signed assessment URL & WhatsApp invite link!"}
           </p>
-          <pre className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-cyan-300 overflow-x-auto max-w-full whitespace-pre-wrap break-all leading-relaxed">
+          <pre className="code-dark p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-cyan-300 overflow-x-auto max-w-full whitespace-pre-wrap break-all leading-relaxed">
             {inboundCurl}
           </pre>
           <div className="text-[11px] text-slate-400 flex items-center gap-2">
