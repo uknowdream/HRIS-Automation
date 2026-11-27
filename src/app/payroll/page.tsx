@@ -17,8 +17,13 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
-import { calculateEmployeePayslip, formatCurrency } from "@/lib/payroll-engine";
-import { convertCurrency, formatConverted } from "@/lib/currency";
+import {
+  calculateAnnual1721A1,
+  calculateEmployeePayslip,
+  calculateThrAndPkwt,
+  formatCurrency,
+} from "@/lib/payroll-engine";
+import { convertCurrency, formatCompactConverted, formatConverted } from "@/lib/currency";
 import { tRole, tStatus } from "@/lib/i18n";
 import type { PayslipItem } from "@/types/hris";
 
@@ -33,8 +38,10 @@ export default function PayrollPage() {
     recordAuditLog,
     employees,
     expenses,
+    overtimeRequests,
     payrollRuns,
     addPayrollRun,
+    verifyPayrollRun,
     broadcastAllPayslips,
     pushToast,
   } = useHRIS();
@@ -43,9 +50,13 @@ export default function PayrollPage() {
   const canViewAllPayroll = hasPermission("payroll:view_all");
   const canRunPayroll = hasPermission("payroll:run");
 
+  const [tab, setTab] = useState<"ledger" | "statutory">("ledger");
   const [running, setRunning] = useState(false);
   const [period, setPeriod] = useState("2026-12");
+  const [makerCheckerMode, setMakerCheckerMode] = useState(true);
   const [selectedSlip, setSelectedSlip] = useState<PayslipItem | null>(null);
+  const [simEmpId, setSimEmpId] = useState(currentEmployee.id);
+  const [simTenureMonths, setSimTenureMonths] = useState(14);
   const activeRun = payrollRuns[0];
 
   const approvedReimbursements = expenses.filter((e) => e.syncedToPayroll);
@@ -56,6 +67,21 @@ export default function PayrollPage() {
     }
     return acc;
   }, {});
+
+  const approvedOvertime = overtimeRequests.filter((o) => o.syncedToPayroll);
+  const overtimeMap = approvedOvertime.reduce<Record<string, number>>((acc, ot) => {
+    acc[ot.employeeId] = (acc[ot.employeeId] || 0) + ot.hours;
+    return acc;
+  }, {});
+
+  const simEmp = canViewAllPayroll
+    ? employees.find((e) => e.id === simEmpId) || currentEmployee
+    : currentEmployee;
+  const thrPkwt = useMemo(
+    () => calculateThrAndPkwt(simEmp.baseSalary, simEmp.allowances, simTenureMonths),
+    [simEmp.allowances, simEmp.baseSalary, simTenureMonths]
+  );
+  const tax1721 = useMemo(() => calculateAnnual1721A1(simEmp), [simEmp]);
 
   const personalSlip = useMemo(() => {
     const fromRun = activeRun?.items.find((i) => i.employeeId === currentEmployee.id);
@@ -86,11 +112,11 @@ export default function PayrollPage() {
       const res = await fetch("/api/payroll/calculate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employees, period, bonusMap: reimbursementMap }),
+        body: JSON.stringify({ employees, period, bonusMap: reimbursementMap, overtimeMap }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
-      addPayrollRun(data.payrollRun);
+      addPayrollRun(data.payrollRun, makerCheckerMode);
     } catch (err) {
       pushToast({
         title: isId ? "Gagal Menjalankan Payroll" : "Payroll Error",
@@ -234,20 +260,203 @@ export default function PayrollPage() {
         )}
       </div>
 
-      {/* Approved Reimbursements Sync Banner */}
-      {canViewAllPayroll && approvedReimbursements.length > 0 && (
+      {/* Payroll Tabs + Maker-Checker Governance Toggle */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex rounded-xl border p-0.5 hr-subtle">
+          <button
+            type="button"
+            onClick={() => setTab("ledger")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              tab === "ledger"
+                ? "bg-white dark:bg-slate-900 shadow-xs text-indigo-600 dark:text-indigo-300"
+                : "hr-muted"
+            }`}
+          >
+            {isId ? "Jurnal Payroll Bulanan" : "Monthly Payroll Ledger"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("statutory")}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+              tab === "statutory"
+                ? "bg-white dark:bg-slate-900 shadow-xs text-indigo-600 dark:text-indigo-300"
+                : "hr-muted"
+            }`}
+          >
+            {isId ? "Kalkulator THR, PKWT & 1721-A1" : "THR, PKWT & 1721-A1 Tax Simulator"}
+          </button>
+        </div>
+
+        {canRunPayroll && (
+          <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-1.5 rounded-xl hr-subtle">
+            <input
+              type="checkbox"
+              checked={makerCheckerMode}
+              onChange={(e) => setMakerCheckerMode(e.target.checked)}
+              className="accent-indigo-600 w-4 h-4"
+            />
+            {isId ? "Verifikasi 4-Mata (Maker–Checker)" : "Four-Eyes Maker–Checker Lock"}
+          </label>
+        )}
+      </div>
+
+      {/* Maker-Checker Pending Verification Banner */}
+      {canRunPayroll && activeRun?.status === "Awaiting Checker" && (
+        <div className="p-4 rounded-2xl badge-warning flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="space-y-0.5">
+            <div className="font-extrabold flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4" />
+              {isId
+                ? `Periode ${activeRun.period} Menunggu Verifikasi Checker (4-Mata)`
+                : `Period ${activeRun.period} Awaiting Checker Sign-Off (Four-Eyes)`}
+            </div>
+            <div className="opacity-90">
+              {isId ? "Dibuat oleh Maker:" : "Prepared by Maker:"} <strong>{activeRun.makerName}</strong> · Net{" "}
+              <strong className="font-mono">{formatConverted(activeRun.totalNetUSD, "USD", displayCurrency)}</strong>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => verifyPayrollRun(activeRun.id)}
+            className="btn-emerald px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            {isId ? "Sahkan & Cairkan (Checker)" : "Verify & Disburse (Checker)"}
+          </button>
+        </div>
+      )}
+
+      {/* Approved Reimbursements & SPL Overtime Sync Banner */}
+      {canViewAllPayroll && (approvedReimbursements.length > 0 || approvedOvertime.length > 0) && (
         <div className="p-3.5 rounded-2xl badge-success flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="font-bold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             {isId
-              ? `${approvedReimbursements.length} klaim reimbursement disetujui siap dikonversi kurs & digabungkan otomatis pada eksekusi Payroll berikutnya.`
-              : `${approvedReimbursements.length} approved expense claims are queued for FX-converted merge on the next Payroll Run.`}
+              ? `${approvedReimbursements.length} reimburse & ${approvedOvertime.length} lembur SPL disetujui siap digabungkan otomatis pada eksekusi Payroll berikutnya.`
+              : `${approvedReimbursements.length} approved expenses & ${approvedOvertime.length} SPL overtime records queued for auto-merge on the next Payroll Run.`}
           </span>
         </div>
       )}
 
+      {tab === "statutory" ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          <div className="lg:col-span-5 hr-card rounded-2xl p-6 space-y-4 text-xs">
+            <h2 className="text-base font-extrabold flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              {isId ? "Simulasi THR, Kompensasi PKWT & 1721-A1" : "THR, PKWT Compensation & 1721-A1 Simulator"}
+            </h2>
+            <p className="hr-muted">
+              {isId
+                ? "Menghitung THR Keagamaan (Permenaker 6/2016), Uang Kompensasi PKWT (PP 35/2021), dan PPh 21 Tahunan Formulir 1721-A1 (UU HPP)."
+                : "Calculates Indonesian Statutory THR (Permenaker 6/2016), Fixed-Term PKWT Compensation (PP 35/2021), and Annual PPh 21 Form 1721-A1."}
+            </p>
+            {canViewAllPayroll && (
+              <div>
+                <label className="block font-bold hr-muted mb-1">{isId ? "Pilih Karyawan" : "Select Employee"}</label>
+                <select
+                  value={simEmpId}
+                  onChange={(e) => setSimEmpId(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-xl hr-input font-semibold"
+                >
+                  {employees.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} — {e.taxStatus} ({e.currency})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <div className="flex justify-between font-bold mb-1">
+                <span className="hr-muted">{isId ? "Masa Kerja (Bulan)" : "Tenure / Contract Months"}</span>
+                <span className="font-mono text-indigo-600 dark:text-indigo-400">{simTenureMonths} {isId ? "Bulan" : "Months"}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={60}
+                value={simTenureMonths}
+                onChange={(e) => setSimTenureMonths(Number(e.target.value))}
+                className="w-full accent-indigo-600"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3.5 rounded-xl hr-subtle">
+                <div className="text-[10px] hr-muted font-bold uppercase">THR ({thrPkwt.thrProRataPct}%)</div>
+                <div className="text-lg font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1">
+                  {formatConverted(thrPkwt.thrAmount, simEmp.currency, displayCurrency)}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl hr-subtle">
+                <div className="text-[10px] hr-muted font-bold uppercase">
+                  {isId ? "Kompensasi PKWT" : "PKWT Payout"}
+                </div>
+                <div className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400 font-mono mt-1">
+                  {formatConverted(thrPkwt.pkwtCompensation, simEmp.currency, displayCurrency)}
+                </div>
+              </div>
+            </div>
+            <div className="p-3 rounded-xl badge-info text-[11px] font-semibold">
+              {isId
+                ? `Estimasi Pesangon PHK (PP 35/2021): ${thrPkwt.severanceMonthsEstimate}× upah tetap (${formatConverted(
+                    thrPkwt.monthlyFixed * thrPkwt.severanceMonthsEstimate,
+                    simEmp.currency,
+                    displayCurrency
+                  )}).`
+                : `Estimated Statutory Severance (PP 35/2021): ${thrPkwt.severanceMonthsEstimate}× monthly fixed wage (${formatConverted(
+                    thrPkwt.monthlyFixed * thrPkwt.severanceMonthsEstimate,
+                    simEmp.currency,
+                    displayCurrency
+                  )}).`}
+            </div>
+          </div>
+
+          <div className="lg:col-span-7 hr-card rounded-2xl p-6 space-y-4 text-xs">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-extrabold">
+                {isId ? `Pratinjau Formulir 1721-A1 — ${simEmp.name}` : `Annual Tax 1721-A1 Preview — ${simEmp.name}`}
+              </h2>
+              <span className="badge-info px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px]">
+                PTKP: {simEmp.taxStatus}
+              </span>
+            </div>
+            <div className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+              {[
+                { label: isId ? "Penghasilan Bruto Setahun (12 Bulan)" : "Annual Gross Income (12 Mos)", val: tax1721.annualGross, neg: false },
+                { label: isId ? "Biaya Jabatan (5%, maks Rp 6 Juta/thn)" : "Occupational Expense (5%, capped)", val: tax1721.biayaJabatan, neg: true },
+                { label: isId ? "Iuran BPJS TK & Pensiun Karyawan (Setahun)" : "Annual Employee Pension/BPJS", val: tax1721.annualBpjsEmployee, neg: true },
+                { label: isId ? `PTKP (${simEmp.taxStatus})` : `Non-Taxable PTKP (${simEmp.taxStatus})`, val: tax1721.ptkp, neg: true },
+                { label: isId ? "Penghasilan Kena Pajak (PKP)" : "Taxable Income (PKP)", val: tax1721.pkp, neg: false },
+              ].map((row) => (
+                <div key={row.label} className="py-2.5 flex items-center justify-between gap-2">
+                  <span className="hr-muted font-medium">{row.label}</span>
+                  <span className={`font-mono font-bold ${row.neg ? "text-rose-600 dark:text-rose-400" : ""}`}>
+                    {row.neg ? "-" : ""}
+                    {formatConverted(row.val, simEmp.currency, displayCurrency)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 rounded-2xl badge-success flex items-center justify-between">
+              <div>
+                <div className="font-extrabold">
+                  {isId ? "Total PPh 21 Terutang Setahun (UU HPP)" : "Total Annual PPh 21 Tax Payable"}
+                </div>
+                <div className="text-[11px] opacity-85">
+                  {isId ? "Tarif Efektif Tahunan:" : "Annual Effective Tax Rate:"} {tax1721.effectiveRatePct}%
+                </div>
+              </div>
+              <div className="text-xl font-extrabold font-mono">
+                {formatConverted(tax1721.annualTax, simEmp.currency, displayCurrency)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Summary Strip Synchronized to displayCurrency */}
-      {canViewAllPayroll && activeRun ? (
+      {tab === "ledger" && canViewAllPayroll && activeRun ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="hr-card rounded-2xl p-5">
             <div className="text-xs hr-muted font-medium">
@@ -265,23 +474,31 @@ export default function PayrollPage() {
             <div className="text-xs hr-muted font-medium">
               {isId ? `Total Gaji Kotor (${displayCurrency})` : `Consolidated Gross (${displayCurrency})`}
             </div>
-            <div className="text-xl sm:text-2xl font-extrabold mt-1 tabular-nums truncate">
-              {formatConverted(activeRun.totalGrossUSD, "USD", displayCurrency)}
+            <div
+              className="text-xl sm:text-2xl font-extrabold mt-1 tabular-nums"
+              title={formatConverted(activeRun.totalGrossUSD, "USD", displayCurrency)}
+            >
+              {formatCompactConverted(activeRun.totalGrossUSD, displayCurrency, locale)}
             </div>
             <div className="text-[11px] hr-muted mt-1 flex items-center gap-1">
-              <Globe2 className="w-3.5 h-3.5 text-indigo-600" />
-              {isId ? "Konsolidasi 5 Mata Uang" : "5 Currencies Consolidated"}
+              <Globe2 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="truncate font-mono">
+                {formatConverted(activeRun.totalGrossUSD, "USD", displayCurrency)}
+              </span>
             </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
             <div className="text-xs hr-muted font-medium">
               {isId ? `Total Gaji Bersih (${displayCurrency})` : `Consolidated Net Payout (${displayCurrency})`}
             </div>
-            <div className="text-xl sm:text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums truncate">
-              {formatConverted(activeRun.totalNetUSD, "USD", displayCurrency)}
+            <div
+              className="text-xl sm:text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums"
+              title={formatConverted(activeRun.totalNetUSD, "USD", displayCurrency)}
+            >
+              {formatCompactConverted(activeRun.totalNetUSD, displayCurrency, locale)}
             </div>
-            <div className="text-[11px] hr-muted mt-1">
-              {isId ? "Pencairan Otomatis via Bank API" : "Auto-disbursed via Bank API"}
+            <div className="text-[11px] hr-muted mt-1 truncate font-mono">
+              {formatConverted(activeRun.totalNetUSD, "USD", displayCurrency)}
             </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
@@ -296,7 +513,7 @@ export default function PayrollPage() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : tab === "ledger" ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="hr-card rounded-2xl p-5">
             <div className="text-xs hr-muted font-medium">
@@ -331,9 +548,10 @@ export default function PayrollPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Payslips Table */}
+      {tab === "ledger" && (
       <div className="hr-card rounded-2xl p-5 overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h2 className="text-base font-extrabold flex items-center gap-2">
@@ -438,6 +656,7 @@ export default function PayrollPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Printable Executive Payslip Modal */}
       {selectedSlip && (

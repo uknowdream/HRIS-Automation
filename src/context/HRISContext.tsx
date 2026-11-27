@@ -24,13 +24,16 @@ import type {
   HRDocument,
   HRNotification,
   IntegrationSettings,
+  JobOpening,
   LearningCourse,
   LeaveRequest,
   Locale,
   OKRItem,
   OnboardingChecklist,
+  OvertimeRequest,
   PayrollRun,
   PermissionKey,
+  ProfileChangeRequest,
   ShiftCode,
   ShiftRosterRow,
   ThemeMode,
@@ -48,14 +51,17 @@ import {
   SEED_DOCUMENTS,
   SEED_EMPLOYEES,
   SEED_EXPENSES,
+  SEED_JOB_OPENINGS,
   SEED_LEAVES,
   SEED_LOGS,
   SEED_OKRS,
+  SEED_OVERTIME,
+  SEED_PROFILE_REQUESTS,
   SEED_REPORTS,
   SEED_SHIFT_ROSTER,
   SEED_WORKFLOWS,
 } from "@/lib/seed-data";
-import { FX_TO_USD } from "@/lib/payroll-engine";
+import { calculateOvertimePayKepmenaker, FX_TO_USD } from "@/lib/payroll-engine";
 import {
   checkRolePermission,
   computeAuditChainHash,
@@ -120,6 +126,9 @@ interface HRISContextValue {
   attendance: AttendanceRecord[];
   shiftRoster: ShiftRosterRow[];
   leaves: LeaveRequest[];
+  overtimeRequests: OvertimeRequest[];
+  profileChangeRequests: ProfileChangeRequest[];
+  jobOpenings: JobOpening[];
   payrollRuns: PayrollRun[];
   expenses: ExpenseClaim[];
   assets: CompanyAsset[];
@@ -157,7 +166,20 @@ interface HRISContextValue {
   submitLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => void;
   decideLeaveRequest: (id: string, decision: "Approved" | "Rejected") => void;
 
-  addPayrollRun: (run: PayrollRun) => void;
+  submitOvertimeRequest: (req: {
+    employeeId: string;
+    date: string;
+    hours: number;
+    isHoliday: boolean;
+    reason: string;
+  }) => void;
+  decideOvertimeRequest: (id: string, decision: "Approved" | "Rejected") => void;
+
+  submitProfileChangeRequest: (req: Omit<ProfileChangeRequest, "id" | "status" | "submittedAt">) => void;
+  decideProfileChangeRequest: (id: string, decision: "Approved" | "Rejected") => void;
+
+  addPayrollRun: (run: PayrollRun, requireChecker?: boolean) => void;
+  verifyPayrollRun: (runId: string) => void;
   broadcastAllPayslips: (period: string, count: number) => void;
 
   submitExpenseClaim: (claim: Omit<ExpenseClaim, "id" | "status">) => void;
@@ -174,6 +196,16 @@ interface HRISContextValue {
   completeCourse: (courseId: string) => void;
 
   addCandidate: (cand: Omit<Candidate, "id" | "appliedAt" | "stage">) => Candidate;
+  applyFromCareerPortal: (input: {
+    jobId: string;
+    name: string;
+    email: string;
+    phone: string;
+    location: string;
+    expectedSalary: string;
+    aiFitScore: number;
+    notes: string;
+  }) => Candidate;
   updateCandidateStage: (id: string, stage: CandidateStage) => void;
   recordInvitation: (inv: CandidateInvitation) => void;
   saveAssessmentReport: (report: AssessmentReport) => void;
@@ -197,7 +229,7 @@ interface HRISContextValue {
   dismissToast: (id: string) => void;
 }
 
-const STORAGE_KEY = "aetherhr_enterprise_state_v7";
+const STORAGE_KEY = "aetherhr_enterprise_state_v8";
 
 const DEFAULT_AUTH_USER: AuthUser = {
   id: "usr-admin-01",
@@ -288,6 +320,11 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(SEED_ATTENDANCE);
   const [shiftRoster, setShiftRoster] = useState<ShiftRosterRow[]>(SEED_SHIFT_ROSTER);
   const [leaves, setLeaves] = useState<LeaveRequest[]>(SEED_LEAVES);
+  const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>(SEED_OVERTIME);
+  const [profileChangeRequests, setProfileChangeRequests] = useState<ProfileChangeRequest[]>(
+    SEED_PROFILE_REQUESTS
+  );
+  const [jobOpenings] = useState<JobOpening[]>(SEED_JOB_OPENINGS);
   const [payrollRuns, setPayrollRuns] = useState<PayrollRun[]>(() => [
     buildSeedPayrollRun(SEED_EMPLOYEES),
   ]);
@@ -360,6 +397,10 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(parsed.attendance)) setAttendance(parsed.attendance);
         if (Array.isArray(parsed.shiftRoster)) setShiftRoster(parsed.shiftRoster);
         if (Array.isArray(parsed.leaves)) setLeaves(parsed.leaves);
+        if (Array.isArray(parsed.overtimeRequests)) setOvertimeRequests(parsed.overtimeRequests);
+        if (Array.isArray(parsed.profileChangeRequests)) {
+          setProfileChangeRequests(parsed.profileChangeRequests);
+        }
         if (Array.isArray(parsed.payrollRuns) && parsed.payrollRuns.length) setPayrollRuns(parsed.payrollRuns);
         if (Array.isArray(parsed.expenses)) setExpenses(parsed.expenses);
         if (Array.isArray(parsed.assets)) setAssets(parsed.assets);
@@ -423,6 +464,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           attendance,
           shiftRoster,
           leaves,
+          overtimeRequests,
+          profileChangeRequests,
           payrollRuns,
           expenses,
           assets,
@@ -458,6 +501,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     attendance,
     shiftRoster,
     leaves,
+    overtimeRequests,
+    profileChangeRequests,
     payrollRuns,
     expenses,
     assets,
@@ -530,14 +575,26 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const markAllNotificationsRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-  }, []);
+    setNotifications((prev) =>
+      prev.map((n) =>
+        !n.targetRoles || n.targetRoles.includes(activeRole) ? { ...n, read: true } : n
+      )
+    );
+  }, [activeRole]);
 
   const clearReadNotifications = useCallback(() => {
-    setNotifications((prev) => prev.filter((n) => !n.read));
-  }, []);
+    setNotifications((prev) =>
+      prev.filter((n) => !(n.read && (!n.targetRoles || n.targetRoles.includes(activeRole))))
+    );
+  }, [activeRole]);
 
-  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+  const roleScopedNotifications = useMemo(
+    () =>
+      notifications.filter((n) => !n.targetRoles || n.targetRoles.includes(activeRole)),
+    [activeRole, notifications]
+  );
+
+  const unreadNotificationsCount = roleScopedNotifications.filter((n) => !n.read).length;
 
   const logAutomation = useCallback((entry: Omit<AutomationLog, "id" | "timestamp">) => {
     setLogs((prev) => [
@@ -1028,13 +1085,14 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [recordAuditLog, shiftRoster]
   );
 
-  // SMART AUTO-PILOT LEAVE SUBMISSION: auto-approves Remote WFA or <= 2d leave when policy enabled!
+  // SMART AUTO-PILOT + 2-STAGE APPROVAL LEAVE SUBMISSION
   const submitLeaveRequest = useCallback(
     (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => {
       const emp = employees.find((e) => e.id === req.employeeId);
       const eligibleAutoApprove =
         settings.autoApproveShortLeave &&
         (req.type === "Remote WFA" || (req.days <= 2 && (emp?.attendanceRate ?? 98) >= 95));
+      const requiresTwoStage = !eligibleAutoApprove && req.days > 3;
 
       const created: LeaveRequest = {
         ...req,
@@ -1042,6 +1100,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         status: eligibleAutoApprove ? "Approved" : "Pending",
         submittedAt: new Date().toISOString(),
         autoNotified: eligibleAutoApprove,
+        requiresTwoStage,
       };
       setLeaves((prev) => [created, ...prev]);
 
@@ -1063,6 +1122,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           message: `${req.days} hari ${req.type} disetujui otomatis & dikirim ke WA/Email/Kalender.`,
           category: "automation",
           href: "/attendance",
+          targetRoles: ["Super Admin", "HR Admin", "Department Manager", "Employee"],
         });
         pushToast({
           title: locale === "id" ? "Auto-Pilot: Cuti Langsung Disetujui!" : "Auto-Pilot: Leave Auto-Approved!",
@@ -1073,24 +1133,29 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         dispatchWorkflowTrigger(
           "leave.submitted",
           req.employeeName,
-          `Submitted ${req.days}d ${req.type} for manager review`
+          `Submitted ${req.days}d ${req.type} (${requiresTwoStage ? "2-Stage Manager -> HR" : "1-Stage Manager"})`
         );
         recordAuditLog({
           module: "Attendance & Leave",
           action: "leave.submitted",
           target: `${req.employeeName} (${req.days}d ${req.type})`,
           severity: "INFO",
-          detail: `Queued ${req.days}-day ${req.type} request for approval (${req.reason}).`,
+          detail: `Queued ${req.days}-day ${req.type} request (${requiresTwoStage ? "2-Stage Governance" : "Standard"}) — ${req.reason}.`,
         });
         pushNotification({
           title: locale === "id" ? "Pengajuan Cuti Baru" : "New Leave Request",
-          message: `${req.employeeName} mengajukan ${req.type} (${req.days} hari).`,
+          message: `${req.employeeName} — ${req.type} (${req.days}d)${requiresTwoStage ? " [2-Stage]" : ""}.`,
           category: "approval",
           href: "/attendance",
+          targetRoles: ["Super Admin", "HR Admin", "Department Manager"],
         });
         pushToast({
           title: locale === "id" ? "Pengajuan Cuti Terkirim" : "Leave Request Submitted",
-          description: `${req.employeeName} — ${req.type} (${req.days}d)`,
+          description: requiresTwoStage
+            ? locale === "id"
+              ? `${req.employeeName} (${req.days}h) — Alur 2 Tahap (Manajer → HR)`
+              : `${req.employeeName} (${req.days}d) — 2-Stage Flow (Manager → HR)`
+            : `${req.employeeName} — ${req.type} (${req.days}d)`,
           variant: "info",
         });
       }
@@ -1109,51 +1174,310 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const decideLeaveRequest = useCallback(
     (id: string, decision: "Approved" | "Rejected") => {
       const target = leaves.find((l) => l.id === id);
+      if (!target) return;
+
+      // 2-Stage Governance for long leaves (> 3 days): Stage 1 Manager -> Stage 2 HR/Super Admin
+      const needsStage2 =
+        decision === "Approved" &&
+        (target.requiresTwoStage || target.days > 3) &&
+        target.status === "Pending" &&
+        activeRole === "Department Manager";
+
+      const nextStatus: LeaveRequest["status"] = needsStage2 ? "Manager Approved" : decision;
+
       setLeaves((prev) =>
-        prev.map((l) => (l.id === id ? { ...l, status: decision, autoNotified: true } : l))
+        prev.map((l) =>
+          l.id === id
+            ? {
+                ...l,
+                status: nextStatus,
+                autoNotified: nextStatus === "Approved" || nextStatus === "Rejected",
+                stage1Approver:
+                  l.stage1Approver || (decision === "Approved" ? `${authUser.name} (${activeRole})` : undefined),
+                stage2Approver:
+                  nextStatus === "Approved" && (l.requiresTwoStage || l.days > 3)
+                    ? `${authUser.name} (${activeRole})`
+                    : l.stage2Approver,
+              }
+            : l
+        )
       );
-      if (target) {
-        if (decision === "Approved") {
-          dispatchWorkflowTrigger(
-            "leave.approved",
-            `${target.employeeName} (${target.employeeEmail})`,
-            `Manager approved ${target.days}d ${target.type}`
-          );
-        }
-        logAutomation({
-          event: decision === "Approved" ? "leave.approved" : "leave.rejected",
-          channel: "WhatsApp",
-          recipient: `${target.employeeName} (${target.employeeEmail})`,
-          status: "Success",
-          latencyMs: 112,
-          detail: `Leave ${decision} — Automated Email, WhatsApp & Calendar sync executed.`,
-        });
+
+      if (needsStage2) {
         recordAuditLog({
           module: "Attendance & Leave",
-          action: decision === "Approved" ? "leave.approved" : "leave.rejected",
+          action: "leave.stage1_manager_approved",
           target: `${target.employeeName} (${target.days}d ${target.type})`,
           severity: "INFO",
-          detail: `Decision: ${decision} — omni-channel employee notification dispatched.`,
+          detail: `Stage 1/2 approved by ${authUser.name} (${activeRole}); escalated to HR Admin for final sign-off.`,
         });
         pushNotification({
-          title: `Cuti ${decision}: ${target.employeeName}`,
-          message: `Notifikasi otomatis terkirim ke Email & WhatsApp (${target.days}d ${target.type}).`,
-          category: "automation",
+          title: locale === "id" ? `Tahap 2 Cuti Diperlukan: ${target.employeeName}` : `Final HR Leave Sign-Off: ${target.employeeName}`,
+          message: `${target.days}d ${target.type} disetujui Manajer (${authUser.name}), menunggu finalisasi HR.`,
+          category: "approval",
           href: "/attendance",
+          targetRoles: ["Super Admin", "HR Admin"],
         });
         pushToast({
-          title: `Leave ${decision}`,
-          description: `${target.employeeName} notified via Email & WhatsApp.`,
-          variant: decision === "Approved" ? "success" : "warning",
+          title: locale === "id" ? "Tahap 1/2 Disetujui (Diteruskan ke HR)" : "Stage 1/2 Approved (Routed to HR)",
+          description: `${target.employeeName} — ${target.days}d ${target.type}`,
+          variant: "info",
         });
+        return;
       }
+
+      if (decision === "Approved") {
+        dispatchWorkflowTrigger(
+          "leave.approved",
+          `${target.employeeName} (${target.employeeEmail})`,
+          `Final approval by ${authUser.name} for ${target.days}d ${target.type}`
+        );
+      }
+      logAutomation({
+        event: decision === "Approved" ? "leave.approved" : "leave.rejected",
+        channel: "WhatsApp",
+        recipient: `${target.employeeName} (${target.employeeEmail})`,
+        status: "Success",
+        latencyMs: 112,
+        detail: `Leave ${decision} by ${authUser.name} — Automated Email, WhatsApp & Calendar sync executed.`,
+      });
+      recordAuditLog({
+        module: "Attendance & Leave",
+        action: decision === "Approved" ? "leave.approved" : "leave.rejected",
+        target: `${target.employeeName} (${target.days}d ${target.type})`,
+        severity: "INFO",
+        detail: `Final decision: ${decision} by ${authUser.name} (${activeRole}) — employee notified.`,
+      });
+      pushNotification({
+        title: locale === "id" ? `Cuti ${decision === "Approved" ? "Disetujui" : "Ditolak"}: ${target.employeeName}` : `Leave ${decision}: ${target.employeeName}`,
+        message: locale === "id"
+          ? `Notifikasi otomatis terkirim ke Email & WhatsApp (${target.days}h ${target.type}).`
+          : `Automated Email & WhatsApp confirmation sent (${target.days}d ${target.type}).`,
+        category: "automation",
+        href: "/attendance",
+        targetRoles: ["Super Admin", "HR Admin", "Department Manager", "Employee"],
+      });
+      pushToast({
+        title: locale === "id" ? `Cuti ${decision === "Approved" ? "Disetujui" : "Ditolak"}` : `Leave ${decision}`,
+        description: `${target.employeeName} notified via Email & WhatsApp.`,
+        variant: decision === "Approved" ? "success" : "warning",
+      });
     },
-    [dispatchWorkflowTrigger, leaves, logAutomation, pushNotification, pushToast, recordAuditLog]
+    [activeRole, authUser.name, dispatchWorkflowTrigger, leaves, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
+  );
+
+  // OVERTIME (SPL KEPMENAKER 1.5x / 2x) SUBMISSION & APPROVAL -> PAYROLL SYNC
+  const submitOvertimeRequest: HRISContextValue["submitOvertimeRequest"] = useCallback(
+    ({ employeeId, date, hours, isHoliday, reason }) => {
+      const emp = employees.find((e) => e.id === employeeId) || currentEmployee;
+      const calc = calculateOvertimePayKepmenaker(emp.baseSalary + emp.allowances, hours, isHoliday);
+      const created: OvertimeRequest = {
+        id: `ot_${Date.now()}`,
+        employeeId: emp.id,
+        employeeName: emp.name,
+        department: emp.department,
+        date,
+        hours,
+        isHoliday,
+        reason,
+        calculatedPay: calc.totalPay,
+        currency: emp.currency,
+        status: "Pending",
+        submittedAt: new Date().toISOString(),
+        syncedToPayroll: false,
+      };
+      setOvertimeRequests((prev) => [created, ...prev]);
+      recordAuditLog({
+        module: "Attendance & Leave",
+        action: "overtime.spl_submitted",
+        target: `${emp.name} (${hours}h ${isHoliday ? "Holiday" : "Weekday"})`,
+        severity: "INFO",
+        detail: `Submitted SPL Overtime: ${calc.formulaLabel} — Est. ${emp.currency} ${calc.totalPay.toLocaleString("en-US")}.`,
+      });
+      pushNotification({
+        title: locale === "id" ? `Pengajuan Lembur SPL Baru: ${emp.name}` : `New Overtime (SPL) Request: ${emp.name}`,
+        message: `${hours} jam (${isHoliday ? "Hari Libur" : "Hari Kerja"}) — ${reason}`,
+        category: "approval",
+        href: "/attendance",
+        targetRoles: ["Super Admin", "HR Admin", "Department Manager", "Finance & Payroll"],
+      });
+      pushToast({
+        title: locale === "id" ? "Lembur (SPL) Diajukan" : "Overtime (SPL) Submitted",
+        description: `${emp.name} · ${calc.formulaLabel}`,
+        variant: "info",
+      });
+    },
+    [currentEmployee, employees, locale, pushNotification, pushToast, recordAuditLog]
+  );
+
+  const decideOvertimeRequest = useCallback(
+    (id: string, decision: "Approved" | "Rejected") => {
+      const target = overtimeRequests.find((o) => o.id === id);
+      if (!target) return;
+      setOvertimeRequests((prev) =>
+        prev.map((o) =>
+          o.id === id ? { ...o, status: decision, syncedToPayroll: decision === "Approved" } : o
+        )
+      );
+      recordAuditLog({
+        module: "Payroll & Tax",
+        action: decision === "Approved" ? "overtime.spl_approved_payroll" : "overtime.spl_rejected",
+        target: `${target.employeeName} (${target.hours}h · ${target.date})`,
+        severity: "SENSITIVE",
+        detail:
+          decision === "Approved"
+            ? `Approved SPL overtime (${target.currency} ${target.calculatedPay.toLocaleString("en-US")}) — auto-synced to Payroll overtime queue.`
+            : `Rejected SPL overtime request.`,
+      });
+      pushToast({
+        title:
+          decision === "Approved"
+            ? locale === "id"
+              ? "Lembur SPL Disetujui & Sync Payroll"
+              : "SPL Overtime Approved & Synced"
+            : locale === "id"
+            ? "Lembur SPL Ditolak"
+            : "SPL Overtime Rejected",
+        description: `${target.employeeName} (${target.hours}h)`,
+        variant: decision === "Approved" ? "success" : "warning",
+      });
+    },
+    [locale, overtimeRequests, pushToast, recordAuditLog]
+  );
+
+  // ESS PROFILE DATA CHANGE REQUESTS (Bank, PTKP, Phone, Emergency Contact)
+  const submitProfileChangeRequest: HRISContextValue["submitProfileChangeRequest"] = useCallback(
+    (req) => {
+      const created: ProfileChangeRequest = {
+        ...req,
+        id: `pcr_${Date.now()}`,
+        status: "Pending",
+        submittedAt: new Date().toISOString(),
+      };
+      setProfileChangeRequests((prev) => [created, ...prev]);
+      recordAuditLog({
+        module: "People & JML",
+        action: "ess.profile_change_requested",
+        target: `${req.employeeName} (${req.field})`,
+        severity: "SENSITIVE",
+        detail: `Requested change on ${req.field}: "${req.oldValue}" → "${req.newValue}" (${req.reason}).`,
+      });
+      pushNotification({
+        title: locale === "id" ? `Permintaan Ubah Data ESS: ${req.employeeName}` : `ESS Data Change Request: ${req.employeeName}`,
+        message: `${req.field}: ${req.oldValue} → ${req.newValue}`,
+        category: "approval",
+        href: "/employees",
+        targetRoles: ["Super Admin", "HR Admin"],
+      });
+      pushToast({
+        title: locale === "id" ? "Permintaan Perubahan Data Terkirim" : "Data Change Request Submitted",
+        description: `${req.field} — ${locale === "id" ? "Menunggu verifikasi HR" : "Awaiting HR verification"}`,
+        variant: "success",
+      });
+    },
+    [locale, pushNotification, pushToast, recordAuditLog]
+  );
+
+  const decideProfileChangeRequest = useCallback(
+    (id: string, decision: "Approved" | "Rejected") => {
+      const target = profileChangeRequests.find((r) => r.id === id);
+      if (!target) return;
+      setProfileChangeRequests((prev) =>
+        prev.map((r) =>
+          r.id === id ? { ...r, status: decision, reviewedBy: `${authUser.name} (${activeRole})` } : r
+        )
+      );
+      if (decision === "Approved") {
+        if (target.field === "Tax Status (PTKP)") {
+          const validPtkp = ["TK/0", "TK/1", "K/0", "K/1", "K/2", "K/3"];
+          if (validPtkp.includes(target.newValue)) {
+            setEmployees((prev) =>
+              prev.map((e) =>
+                e.id === target.employeeId
+                  ? { ...e, taxStatus: target.newValue as Employee["taxStatus"] }
+                  : e
+              )
+            );
+          }
+        } else if (target.field === "Phone & WhatsApp") {
+          const clean = target.newValue.replace(/[^\d]/g, "");
+          if (clean) {
+            setEmployees((prev) =>
+              prev.map((e) => (e.id === target.employeeId ? { ...e, phone: clean } : e))
+            );
+          }
+        }
+      }
+      recordAuditLog({
+        module: "People & JML",
+        action: decision === "Approved" ? "ess.profile_change_approved" : "ess.profile_change_rejected",
+        target: `${target.employeeName} (${target.field})`,
+        severity: "SENSITIVE",
+        detail: `${decision} ESS update (${target.field}: ${target.newValue}) by ${authUser.name}.`,
+      });
+      pushNotification({
+        title: locale === "id" ? `Perubahan Data ${decision === "Approved" ? "Disetujui" : "Ditolak"}` : `Profile Update ${decision}`,
+        message: `${target.field} → ${target.newValue}`,
+        category: "security",
+        href: "/profile",
+        targetRoles: ["Employee", "Super Admin", "HR Admin"],
+      });
+      pushToast({
+        title:
+          decision === "Approved"
+            ? locale === "id"
+              ? "Perubahan Data ESS Disetujui!"
+              : "ESS Profile Change Approved!"
+            : locale === "id"
+            ? "Perubahan Data Ditolak"
+            : "Profile Change Rejected",
+        description: `${target.employeeName} — ${target.field}`,
+        variant: decision === "Approved" ? "success" : "warning",
+      });
+    },
+    [activeRole, authUser.name, locale, profileChangeRequests, pushNotification, pushToast, recordAuditLog]
   );
 
   const addPayrollRun = useCallback(
-    (run: PayrollRun) => {
-      setPayrollRuns((prev) => [run, ...prev]);
+    (run: PayrollRun, requireChecker = false) => {
+      const normalizedRun: PayrollRun = requireChecker
+        ? {
+            ...run,
+            status: "Awaiting Checker",
+            makerName: `${authUser.name} (${activeRole})`,
+          }
+        : {
+            ...run,
+            status: "Completed",
+            makerName: `${authUser.name} (${activeRole})`,
+            checkerName: `${authUser.name} (Auto-Verified)`,
+            verifiedAt: new Date().toISOString(),
+          };
+      setPayrollRuns((prev) => [normalizedRun, ...prev]);
+
+      if (requireChecker) {
+        recordAuditLog({
+          module: "Payroll & Tax",
+          action: "payroll.maker_draft_submitted",
+          target: `${run.period} (${run.totalEmployees} Payslips)`,
+          severity: "SENSITIVE",
+          detail: `Maker ${authUser.name} created Payroll cycle ${run.id} (Net $${run.totalNetUSD.toLocaleString("en-US")}) — awaiting Checker verification.`,
+        });
+        pushNotification({
+          title: locale === "id" ? `Payroll ${run.period} Menunggu Checker` : `Payroll ${run.period} Awaiting Checker`,
+          message: `${authUser.name} mengajukan siklus payroll (${run.totalEmployees} staf) untuk verifikasi 4-mata.`,
+          category: "approval",
+          href: "/payroll",
+          targetRoles: ["Super Admin", "Finance & Payroll", "HR Admin"],
+        });
+        pushToast({
+          title: locale === "id" ? "Draf Payroll Menunggu Verifikasi Checker" : "Payroll Queued for Checker Sign-Off",
+          description: `${run.period} — ${run.totalEmployees} slips prepared (Maker–Checker).`,
+          variant: "info",
+        });
+        return;
+      }
+
       dispatchWorkflowTrigger(
         "payroll.completed",
         `${run.totalEmployees} Global Employees`,
@@ -1176,10 +1500,11 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         detail: `Executed multi-currency payroll run ${run.id} — Gross $${run.totalGrossUSD.toLocaleString("en-US")}, Net $${run.totalNetUSD.toLocaleString("en-US")}.`,
       });
       pushNotification({
-        title: `Payroll ${run.period} Selesai`,
-        message: `${run.totalEmployees} slip gaji dihitung & dikirim (Net $${run.totalNetUSD.toLocaleString("en-US")}).`,
+        title: locale === "id" ? `Payroll ${run.period} Selesai` : `Payroll ${run.period} Completed`,
+        message: `${run.totalEmployees} slip gaji dihitung & dikirim.`,
         category: "payroll",
         href: "/payroll",
+        targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll", "Employee"],
       });
       pushToast({
         title: locale === "id" ? "Payroll Global Selesai!" : "Global Payroll Completed!",
@@ -1187,7 +1512,53 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         variant: "success",
       });
     },
-    [dispatchWorkflowTrigger, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
+    [activeRole, authUser.name, dispatchWorkflowTrigger, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
+  );
+
+  const verifyPayrollRun = useCallback(
+    (runId: string) => {
+      const target = payrollRuns.find((r) => r.id === runId);
+      if (!target) return;
+      const verifiedAt = new Date().toISOString();
+      setPayrollRuns((prev) =>
+        prev.map((r) =>
+          r.id === runId
+            ? {
+                ...r,
+                status: "Completed",
+                checkerName: `${authUser.name} (${activeRole})`,
+                verifiedAt,
+              }
+            : r
+        )
+      );
+      dispatchWorkflowTrigger(
+        "payroll.completed",
+        `${target.totalEmployees} Global Employees`,
+        `Checker ${authUser.name} verified & disbursed ${target.label}`,
+        { period: target.period, totalEmployees: target.totalEmployees, totalNetUSD: target.totalNetUSD }
+      );
+      recordAuditLog({
+        module: "Payroll & Tax",
+        action: "payroll.checker_verified_disbursed",
+        target: `${target.period} (${target.id})`,
+        severity: "CRITICAL",
+        detail: `Four-Eyes Checker ${authUser.name} (${activeRole}) verified & released payroll disbursement ($${target.totalNetUSD.toLocaleString("en-US")} Net).`,
+      });
+      pushNotification({
+        title: locale === "id" ? `Payroll ${target.period} Disahkan & Cair` : `Payroll ${target.period} Verified & Disbursed`,
+        message: `Checker ${authUser.name} mengesahkan pencairan ${target.totalEmployees} slip gaji.`,
+        category: "payroll",
+        href: "/payroll",
+        targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll", "Employee"],
+      });
+      pushToast({
+        title: locale === "id" ? "Verifikasi Checker Berhasil — Dana Dicairkan!" : "Checker Approved — Payroll Disbursed!",
+        description: `${target.period} · Verified by ${authUser.name}`,
+        variant: "success",
+      });
+    },
+    [activeRole, authUser.name, dispatchWorkflowTrigger, locale, payrollRuns, pushNotification, pushToast, recordAuditLog]
   );
 
   const broadcastAllPayslips = useCallback(
@@ -1216,18 +1587,20 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [locale, logAutomation, pushToast, recordAuditLog]
   );
 
-  // SMART AUTO-PILOT MICRO-EXPENSE SUBMISSION
+  // SMART AUTO-PILOT + 2-STAGE GOVERNANCE EXPENSE SUBMISSION (> $500 USD requires Manager + Finance)
   const submitExpenseClaim = useCallback(
     (claim: Omit<ExpenseClaim, "id" | "status">) => {
       const usdEquivalent = Math.round(claim.amount * (FX_TO_USD[claim.currency] || 1));
       const autoApproved =
         settings.autoApproveMicroExpense && usdEquivalent <= settings.microExpenseLimitUSD;
+      const requiresTwoStage = !autoApproved && usdEquivalent > 500;
 
       const created: ExpenseClaim = {
         ...claim,
         id: `exp_${Date.now()}`,
         status: autoApproved ? "Approved" : "Pending",
         syncedToPayroll: autoApproved,
+        requiresTwoStage,
       };
       setExpenses((prev) => [created, ...prev]);
 
@@ -1249,6 +1622,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           message: `${claim.employeeName} (${claim.currency} ${claim.amount.toLocaleString("en-US")}) otomatis masuk antrean Payroll.`,
           category: "payroll",
           href: "/payroll",
+          targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll", "Employee"],
         });
         pushToast({
           title: locale === "id" ? "Auto-Pilot: Klaim Langsung Sync Payroll!" : "Auto-Pilot: Expense Auto-Synced!",
@@ -1260,18 +1634,23 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           module: "Expenses & Assets",
           action: "expense.submitted",
           target: `${claim.employeeName} (${claim.currency} ${claim.amount.toLocaleString("en-US")})`,
-          severity: "INFO",
-          detail: `Submitted ${claim.category} claim (~$${usdEquivalent}) for Finance review.`,
+          severity: requiresTwoStage ? "SENSITIVE" : "INFO",
+          detail: `Submitted ${claim.category} claim (~$${usdEquivalent}) — ${requiresTwoStage ? "2-Stage Maker-Checker required (> $500)" : "Standard Finance review"}.`,
         });
         pushNotification({
           title: locale === "id" ? "Klaim Reimburse Baru" : "New Expense Claim",
-          message: `${claim.employeeName} — ${claim.category} (${claim.currency} ${claim.amount.toLocaleString("en-US")})`,
+          message: `${claim.employeeName} — ${claim.category} (${claim.currency} ${claim.amount.toLocaleString("en-US")})${requiresTwoStage ? " [2-Stage]" : ""}`,
           category: "approval",
           href: "/finance-ops",
+          targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll", "Department Manager"],
         });
         pushToast({
           title: locale === "id" ? "Klaim Reimburse Diajukan" : "Expense Claim Submitted",
-          description: `${claim.employeeName} — ${claim.category}`,
+          description: requiresTwoStage
+            ? locale === "id"
+              ? `${claim.employeeName} (> $500) — Alur 2 Tahap (Manajer → Finance)`
+              : `${claim.employeeName} (> $500) — 2-Stage (Manager → Finance)`
+            : `${claim.employeeName} — ${claim.category}`,
           variant: "info",
         });
       }
@@ -1290,63 +1669,107 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const decideExpenseClaim = useCallback(
     (id: string, decision: "Approved" | "Rejected") => {
       const target = expenses.find((e) => e.id === id);
+      if (!target) return;
+
+      const usdEq = Math.round(target.amount * (FX_TO_USD[target.currency] || 1));
+      const needsFinanceStage2 =
+        decision === "Approved" &&
+        (target.requiresTwoStage || usdEq > 500) &&
+        target.status === "Pending" &&
+        activeRole === "Department Manager";
+
+      const nextStatus: ExpenseClaim["status"] = needsFinanceStage2 ? "Manager Approved" : decision;
+
       setExpenses((prev) =>
         prev.map((e) =>
           e.id === id
-            ? { ...e, status: decision, syncedToPayroll: decision === "Approved" }
+            ? {
+                ...e,
+                status: nextStatus,
+                syncedToPayroll: nextStatus === "Approved",
+                stage1Approver:
+                  e.stage1Approver || (decision === "Approved" ? `${authUser.name} (${activeRole})` : undefined),
+                stage2Approver:
+                  nextStatus === "Approved" && (e.requiresTwoStage || usdEq > 500)
+                    ? `${authUser.name} (${activeRole})`
+                    : e.stage2Approver,
+              }
             : e
         )
       );
-      if (target) {
-        if (decision === "Approved") {
-          dispatchWorkflowTrigger(
-            "expense.approved",
-            target.employeeName,
-            `Approved ${target.currency} ${target.amount.toLocaleString("en-US")} & queued for Payroll`
-          );
-        }
-        logAutomation({
-          event: "expense.approved",
-          channel: "Email",
-          recipient: target.employeeName,
-          status: "Success",
-          latencyMs: 96,
-          detail:
-            decision === "Approved"
-              ? `Reimbursement approved & auto-merged into next Payroll cycle (${target.currency} ${target.amount.toLocaleString("en-US")}).`
-              : `Reimbursement rejected.`,
-        });
+
+      if (needsFinanceStage2) {
         recordAuditLog({
           module: "Expenses & Assets",
-          action: decision === "Approved" ? "expense.approved" : "expense.rejected",
+          action: "expense.stage1_manager_approved",
           target: `${target.employeeName} (${target.receiptRef})`,
           severity: "SENSITIVE",
-          detail: `${decision} expense claim of ${target.currency} ${target.amount.toLocaleString("en-US")}.`,
+          detail: `High-value expense (~$${usdEq}) Stage 1 verified by ${authUser.name}; escalated to Finance for Stage 2 Payroll release.`,
         });
         pushNotification({
-          title: `Reimburse ${decision}: ${target.employeeName}`,
-          message:
-            decision === "Approved"
-              ? "Otomatis masuk antrean Payroll periode berikutnya."
-              : "Klaim ditolak oleh finance.",
-          category: "payroll",
-          href: "/payroll",
+          title: locale === "id" ? `Tahap 2 Reimburse Finance: ${target.employeeName}` : `Finance Final Expense Sign-Off: ${target.employeeName}`,
+          message: `Tahap 1 diverifikasi ${authUser.name} — menunggu pencairan Finance.`,
+          category: "approval",
+          href: "/finance-ops",
+          targetRoles: ["Super Admin", "Finance & Payroll", "HR Admin"],
         });
         pushToast({
-          title:
-            decision === "Approved"
-              ? locale === "id"
-                ? "Reimburse Disetujui & Sync Payroll"
-                : "Expense Approved & Synced"
-              : locale === "id"
-              ? "Reimburse Ditolak"
-              : "Expense Rejected",
-          description: target.employeeName,
-          variant: decision === "Approved" ? "success" : "warning",
+          title: locale === "id" ? "Tahap 1/2 Diverifikasi (Diteruskan ke Finance)" : "Stage 1/2 Approved (Escalated to Finance)",
+          description: `${target.employeeName} — ${target.receiptRef}`,
+          variant: "info",
         });
+        return;
       }
+
+      if (decision === "Approved") {
+        dispatchWorkflowTrigger(
+          "expense.approved",
+          target.employeeName,
+          `Final approval by ${authUser.name}: ${target.currency} ${target.amount.toLocaleString("en-US")} queued for Payroll`
+        );
+      }
+      logAutomation({
+        event: "expense.approved",
+        channel: "Email",
+        recipient: target.employeeName,
+        status: "Success",
+        latencyMs: 96,
+        detail:
+          decision === "Approved"
+            ? `Reimbursement finalized by ${authUser.name} & auto-merged into next Payroll (${target.currency} ${target.amount.toLocaleString("en-US")}).`
+            : `Reimbursement rejected by ${authUser.name}.`,
+      });
+      recordAuditLog({
+        module: "Expenses & Assets",
+        action: decision === "Approved" ? "expense.approved" : "expense.rejected",
+        target: `${target.employeeName} (${target.receiptRef})`,
+        severity: "SENSITIVE",
+        detail: `${decision} expense claim of ${target.currency} ${target.amount.toLocaleString("en-US")} by ${authUser.name} (${activeRole}).`,
+      });
+      pushNotification({
+        title: `Reimburse ${decision}: ${target.employeeName}`,
+        message:
+          decision === "Approved"
+            ? "Otomatis masuk antrean Payroll periode berikutnya."
+            : "Klaim ditolak oleh finance.",
+        category: "payroll",
+        href: "/payroll",
+        targetRoles: ["Super Admin", "Finance & Payroll", "HR Admin", "Employee"],
+      });
+      pushToast({
+        title:
+          decision === "Approved"
+            ? locale === "id"
+              ? "Reimburse Disetujui & Sync Payroll"
+              : "Expense Approved & Synced"
+            : locale === "id"
+            ? "Reimburse Ditolak"
+            : "Expense Rejected",
+        description: target.employeeName,
+        variant: decision === "Approved" ? "success" : "warning",
+      });
     },
-    [dispatchWorkflowTrigger, expenses, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
+    [activeRole, authUser.name, dispatchWorkflowTrigger, expenses, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
   );
 
   const addAsset = useCallback(
@@ -1584,6 +2007,33 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       return created;
     },
     [dispatchWorkflowTrigger, logAutomation, recordAuditLog]
+  );
+
+  const applyFromCareerPortal: HRISContextValue["applyFromCareerPortal"] = useCallback(
+    ({ jobId, name, email, phone, location, expectedSalary, aiFitScore, notes }) => {
+      const job = jobOpenings.find((j) => j.id === jobId) || jobOpenings[0];
+      const created = addCandidate({
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.replace(/[^\d]/g, ""),
+        role: job.title,
+        department: job.department,
+        location: location.trim() || job.location,
+        source: "Direct Portal",
+        expectedSalary: expectedSalary.trim() || "Competitive",
+        psychometricFit: aiFitScore,
+        notes,
+      });
+      pushNotification({
+        title: locale === "id" ? `Pelamar Baru dari Portal Karir (${aiFitScore}% Fit)` : `New Career Portal Applicant (${aiFitScore}% AI Fit)`,
+        message: `${created.name} melamar posisi ${job.title} — masuk ATS otomatis.`,
+        category: "assessment",
+        href: "/recruitment",
+        targetRoles: ["Super Admin", "HR Admin", "Department Manager"],
+      });
+      return created;
+    },
+    [addCandidate, jobOpenings, locale, pushNotification]
   );
 
   const updateCandidateStage = useCallback(
@@ -1872,6 +2322,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     setAttendance(SEED_ATTENDANCE);
     setShiftRoster(SEED_SHIFT_ROSTER);
     setLeaves(SEED_LEAVES);
+    setOvertimeRequests(SEED_OVERTIME);
+    setProfileChangeRequests(SEED_PROFILE_REQUESTS);
     setPayrollRuns([buildSeedPayrollRun(SEED_EMPLOYEES)]);
     setExpenses(SEED_EXPENSES);
     setAssets(SEED_ASSETS);
@@ -1942,6 +2394,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         attendance,
         shiftRoster,
         leaves,
+        overtimeRequests,
+        profileChangeRequests,
+        jobOpenings,
         payrollRuns,
         expenses,
         assets,
@@ -1956,7 +2411,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         logs,
         okrs,
         settings,
-        notifications,
+        notifications: roleScopedNotifications,
         unreadNotificationsCount,
         pushNotification,
         markNotificationRead,
@@ -1972,7 +2427,12 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         cycleShiftCell,
         submitLeaveRequest,
         decideLeaveRequest,
+        submitOvertimeRequest,
+        decideOvertimeRequest,
+        submitProfileChangeRequest,
+        decideProfileChangeRequest,
         addPayrollRun,
+        verifyPayrollRun,
         broadcastAllPayslips,
         submitExpenseClaim,
         decideExpenseClaim,
@@ -1984,6 +2444,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         toggleChecklistTask,
         completeCourse,
         addCandidate,
+        applyFromCareerPortal,
         updateCandidateStage,
         recordInvitation,
         saveAssessmentReport,

@@ -149,3 +149,127 @@ export function calculateEmployeePayslip(
     dispatchedVia: ["Email", "WhatsApp"],
   };
 }
+
+/**
+ * Indonesian Statutory Overtime (SPL) per PP 35/2021 & Kepmenaker:
+ * Hourly base = 1 / 173 × monthly wage.
+ * Weekday: 1st hour = 1.5x, hours 2+ = 2.0x.
+ * Weekend / Public Holiday (5-day workweek): hours 1-8 = 2.0x, hour 9 = 3.0x, hours 10+ = 4.0x.
+ */
+export function calculateOvertimePayKepmenaker(
+  monthlyFixedWage: number,
+  hours: number,
+  isHoliday = false
+): { totalPay: number; weightedHours: number; formulaLabel: string } {
+  const safeHours = Math.max(0, Math.min(12, hours));
+  const hourly = monthlyFixedWage / 173;
+  let weightedHours = 0;
+
+  if (!isHoliday) {
+    if (safeHours <= 1) {
+      weightedHours = safeHours * 1.5;
+    } else {
+      weightedHours = 1.5 + (safeHours - 1) * 2;
+    }
+  } else {
+    const first8 = Math.min(safeHours, 8);
+    const ninth = safeHours > 8 ? Math.min(safeHours - 8, 1) : 0;
+    const tenthPlus = safeHours > 9 ? safeHours - 9 : 0;
+    weightedHours = first8 * 2 + ninth * 3 + tenthPlus * 4;
+  }
+
+  return {
+    totalPay: Math.round(hourly * weightedHours),
+    weightedHours: Math.round(weightedHours * 100) / 100,
+    formulaLabel: isHoliday
+      ? `Holiday SPL (${safeHours}h → ${weightedHours.toFixed(1)}x)`
+      : `Weekday SPL (${safeHours}h → ${weightedHours.toFixed(1)}x)`,
+  };
+}
+
+/**
+ * Indonesian THR Keagamaan (Permenaker 6/2016) & PKWT Compensation (PP 35/2021)
+ */
+export function calculateThrAndPkwt(
+  baseSalary: number,
+  fixedAllowances: number,
+  tenureMonths: number
+): {
+  monthlyFixed: number;
+  thrAmount: number;
+  thrProRataPct: number;
+  pkwtCompensation: number;
+  severanceMonthsEstimate: number;
+} {
+  const monthlyFixed = Math.max(0, baseSalary + fixedAllowances);
+  const months = Math.max(1, tenureMonths);
+  const thrRatio = Math.min(1, months / 12);
+  const thrAmount = Math.round(monthlyFixed * thrRatio);
+  const pkwtCompensation = Math.round((months / 12) * monthlyFixed);
+  const years = Math.floor(months / 12);
+  const severanceMonthsEstimate = Math.min(9, years + 1);
+  return {
+    monthlyFixed,
+    thrAmount,
+    thrProRataPct: Math.round(thrRatio * 100),
+    pkwtCompensation,
+    severanceMonthsEstimate,
+  };
+}
+
+/**
+ * Indonesian Annual PPh 21 Form 1721-A1 Summary (UU HPP Progressive Brackets)
+ */
+export function calculateAnnual1721A1(employee: Employee): {
+  annualGross: number;
+  biayaJabatan: number;
+  annualBpjsEmployee: number;
+  ptkp: number;
+  pkp: number;
+  annualTax: number;
+  effectiveRatePct: number;
+} {
+  const annualGross = (employee.baseSalary + employee.allowances) * 12;
+  const biayaJabatan = Math.min(6_000_000, Math.round(annualGross * 0.05));
+  const annualBpjsEmployee = Math.round(employee.baseSalary * 0.03 * 12);
+  const ptkpTable: Record<Employee["taxStatus"], number> = {
+    "TK/0": 54_000_000,
+    "TK/1": 58_500_000,
+    "K/0": 58_500_000,
+    "K/1": 63_000_000,
+    "K/2": 67_500_000,
+    "K/3": 72_000_000,
+  };
+  const ptkp = ptkpTable[employee.taxStatus] || 54_000_000;
+  const netAnnual = Math.max(0, annualGross - biayaJabatan - annualBpjsEmployee);
+  const pkp = Math.max(0, Math.floor((netAnnual - ptkp) / 1000) * 1000);
+
+  let remaining = pkp;
+  let annualTax = 0;
+  const brackets: [number, number][] = [
+    [60_000_000, 0.05],
+    [190_000_000, 0.15],
+    [250_000_000, 0.25],
+    [4_500_000_000, 0.3],
+    [Infinity, 0.35],
+  ];
+  for (const [cap, rate] of brackets) {
+    if (remaining <= 0) break;
+    const chunk = Math.min(remaining, cap);
+    annualTax += Math.round(chunk * rate);
+    remaining -= chunk;
+  }
+
+  const effectiveRatePct =
+    annualGross > 0 ? Math.round((annualTax / annualGross) * 10000) / 100 : 0;
+
+  return {
+    annualGross,
+    biayaJabatan,
+    annualBpjsEmployee,
+    ptkp,
+    pkp,
+    annualTax,
+    effectiveRatePct,
+  };
+}

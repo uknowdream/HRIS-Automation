@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { selectQuestionsForSession } from "@/lib/psychometrics";
 import { evaluateAssessmentSubmission } from "@/lib/psychometrics/scoring";
 import { signWebhookPayload } from "@/lib/token";
+import { isSafeExternalUrl } from "@/lib/security";
 import type { AssessmentCategory, ProctoringEvent } from "@/types/hris";
 
 interface SubmitBody {
+  sessionId?: string;
   candidateId?: string;
   candidateName: string;
   candidateEmail: string;
@@ -29,26 +31,27 @@ export async function POST(request: NextRequest) {
       body.categories?.length
         ? body.categories
         : ["numerical", "verbal", "abstract", "spatial", "speed", "big5", "disc", "sjt"],
-      body.expressLimitPerCategory
+      body.expressLimitPerCategory,
+      body.sessionId
     );
 
     const report = evaluateAssessmentSubmission({
       candidateId: body.candidateId,
-      candidateName: body.candidateName || "Candidate",
-      candidateEmail: body.candidateEmail || "",
-      candidatePhone: body.candidatePhone,
-      targetRole: body.targetRole || "Enterprise Specialist",
-      presetName: body.presetName || "AetherHR Assessment",
+      candidateName: String(body.candidateName || "Candidate").slice(0, 120),
+      candidateEmail: String(body.candidateEmail || "").slice(0, 140),
+      candidatePhone: body.candidatePhone ? String(body.candidatePhone).slice(0, 30) : undefined,
+      targetRole: String(body.targetRole || "Enterprise Specialist").slice(0, 120),
+      presetName: String(body.presetName || "AetherHR Assessment").slice(0, 140),
       questions,
       answers: body.answers || {},
-      durationUsedSec: body.durationUsedSec || 0,
-      durationAllocatedSec: body.durationAllocatedSec || 1200,
-      proctoringEvents: body.proctoringEvents || [],
+      durationUsedSec: Math.max(0, Number(body.durationUsedSec) || 0),
+      durationAllocatedSec: Math.max(60, Number(body.durationAllocatedSec) || 1200),
+      proctoringEvents: Array.isArray(body.proctoringEvents) ? body.proctoringEvents : [],
     });
 
-    // Fire outbound webhook if configured
+    // Fire outbound webhook only if it passes strict OWASP SSRF validation
     const targetWebhook = body.webhookUrl || process.env.DEFAULT_WEBHOOK_URL;
-    if (targetWebhook && targetWebhook.startsWith("http")) {
+    if (targetWebhook && isSafeExternalUrl(targetWebhook).safe) {
       const serialized = JSON.stringify({
         event:
           report.estimatedIq >= 120 ? "assessment.high_score" : "assessment.completed",
@@ -63,16 +66,18 @@ export async function POST(request: NextRequest) {
           "X-AetherHR-Signature": signWebhookPayload(serialized, body.webhookSecret),
         },
         body: serialized,
+        signal: AbortSignal.timeout(4000),
       }).catch(() => {});
     }
 
-    if (body.slackWebhookUrl && body.slackWebhookUrl.startsWith("http")) {
+    if (body.slackWebhookUrl && isSafeExternalUrl(body.slackWebhookUrl).safe) {
       fetch(body.slackWebhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: `🧠 *AetherHR Psychometric Report*: *${report.candidateName}* (${report.targetRole}) — IQ *${report.estimatedIq}* (${report.globalPercentile}th pct) | DISC: *${report.disc.archetype}* | Integrity: *${report.integrityScore}%* | Verdict: *${report.recommendation}*`,
         }),
+        signal: AbortSignal.timeout(4000),
       }).catch(() => {});
     }
 

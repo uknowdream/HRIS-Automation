@@ -75,6 +75,7 @@ export interface HRNotification {
   read: boolean;
   createdAt: string;
   href: string;
+  targetRoles?: ActiveRole[];
 }
 
 export type Currency = "IDR" | "USD" | "SGD" | "EUR" | "GBP";
@@ -149,9 +150,58 @@ export interface LeaveRequest {
   endDate: string;
   days: number;
   reason: string;
-  status: "Pending" | "Approved" | "Rejected";
+  status: "Pending" | "Manager Approved" | "Approved" | "Rejected";
   submittedAt: string;
   autoNotified?: boolean;
+  requiresTwoStage?: boolean;
+  stage1Approver?: string;
+  stage2Approver?: string;
+}
+
+export interface OvertimeRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  date: string;
+  hours: number;
+  isHoliday: boolean;
+  reason: string;
+  calculatedPay: number;
+  currency: Currency;
+  status: "Pending" | "Approved" | "Rejected";
+  submittedAt: string;
+  syncedToPayroll?: boolean;
+}
+
+export interface ProfileChangeRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  field: "Bank Account" | "Tax Status (PTKP)" | "Phone & WhatsApp" | "Emergency Contact" | "Home Address";
+  oldValue: string;
+  newValue: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  submittedAt: string;
+  reviewedBy?: string;
+}
+
+export interface JobOpening {
+  id: string;
+  title: string;
+  department: string;
+  location: string;
+  country: string;
+  employmentType: EmploymentType;
+  salaryMinUSD: number;
+  salaryMaxUSD: number;
+  requiredSkills: string[];
+  summary: { id: string; en: string };
+  presetId: string;
+  openSlots: number;
+  remoteFriendly: boolean;
 }
 
 export interface PayslipItem {
@@ -181,7 +231,10 @@ export interface PayrollRun {
   period: string;
   label: string;
   runDate: string;
-  status: "Completed" | "Draft" | "Processing";
+  status: "Completed" | "Draft" | "Processing" | "Awaiting Checker";
+  makerName?: string;
+  checkerName?: string;
+  verifiedAt?: string;
   totalEmployees: number;
   totalGrossUSD: number;
   totalNetUSD: number;
@@ -203,8 +256,11 @@ export interface ExpenseClaim {
   currency: Currency;
   date: string;
   receiptRef: string;
-  status: "Pending" | "Approved" | "Paid in Payroll" | "Rejected";
+  status: "Pending" | "Manager Approved" | "Approved" | "Paid in Payroll" | "Rejected";
   syncedToPayroll?: boolean;
+  requiresTwoStage?: boolean;
+  stage1Approver?: string;
+  stage2Approver?: string;
 }
 
 export interface CompanyAsset {

@@ -17,11 +17,13 @@ import {
   CheckCircle2,
   Sparkles,
   Lock,
+  AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { formatCurrency } from "@/lib/payroll-engine";
 import { formatConverted } from "@/lib/currency";
-import { tRole, tStatus } from "@/lib/i18n";
+import { tStatus } from "@/lib/i18n";
 import type { Currency, Employee, EmploymentType } from "@/types/hris";
 
 export default function EmployeesPage() {
@@ -34,6 +36,8 @@ export default function EmployeesPage() {
     hasPermission,
     recordAuditLog,
     employees,
+    profileChangeRequests,
+    decideProfileChangeRequest,
     addEmployee,
     updateEmployee,
     offboardEmployee,
@@ -56,6 +60,10 @@ export default function EmployeesPage() {
   const [editSalary, setEditSalary] = useState("");
   const [editStatus, setEditStatus] = useState<Employee["status"]>("Active");
   const [addOpen, setAddOpen] = useState(false);
+  const [offboardTarget, setOffboardTarget] = useState<Employee | null>(null);
+  const [offboardConfirmText, setOffboardConfirmText] = useState("");
+
+  const pendingProfileRequests = profileChangeRequests.filter((r) => r.status === "Pending");
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -250,6 +258,56 @@ export default function EmployeesPage() {
         </div>
       </div>
 
+      {/* HR Maker-Checker Approval Queue for ESS Data Change Requests */}
+      {canManageEmployees && pendingProfileRequests.length > 0 && (
+        <div className="hr-card rounded-2xl p-5 space-y-3 border-l-4 border-l-indigo-600">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-extrabold flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              {isId
+                ? `Antrean Verifikasi Perubahan Data ESS Karyawan (${pendingProfileRequests.length})`
+                : `Employee ESS Profile Change Approval Queue (${pendingProfileRequests.length})`}
+            </h2>
+            <span className="badge-info px-2.5 py-0.5 rounded-full text-[10px] font-bold">
+              Maker–Checker HR
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingProfileRequests.map((req) => (
+              <div key={req.id} className="p-3.5 rounded-xl hr-subtle flex flex-col justify-between gap-2.5 text-xs">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-extrabold">{req.employeeName}</span>
+                    <span className="badge-warning px-2 py-0.5 rounded-full text-[10px] font-bold">{req.field}</span>
+                  </div>
+                  <div className="mt-1 font-mono text-[11px]">
+                    <span className="hr-muted line-through">{req.oldValue}</span> →{" "}
+                    <span className="font-bold text-indigo-600 dark:text-indigo-400">{req.newValue}</span>
+                  </div>
+                  <p className="text-[11px] hr-muted mt-1">{req.reason}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => decideProfileChangeRequest(req.id, "Approved")}
+                    className="flex-1 btn-emerald py-1.5 rounded-lg text-[11px] font-bold"
+                  >
+                    {isId ? "Setujui & Update" : "Approve & Sync"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => decideProfileChangeRequest(req.id, "Rejected")}
+                    className="flex-1 badge-danger py-1.5 rounded-lg text-[11px] font-bold"
+                  >
+                    {isId ? "Tolak" : "Reject"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filter Bar */}
       <div className="hr-card rounded-2xl p-4 flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative w-full sm:max-w-md">
@@ -383,53 +441,84 @@ export default function EmployeesPage() {
           ))}
         </div>
       ) : (
-        /* Interactive Org Chart Hierarchy View */
+        /* True Hierarchical Reporting Tree Org Chart */
         <div className="hr-card rounded-2xl p-6 space-y-6">
-          <div className="text-center">
-            <div className="inline-flex flex-col items-center p-4 rounded-2xl hr-subtle border-indigo-500/30">
-              <span className="text-[10px] uppercase tracking-widest text-indigo-600 dark:text-indigo-400 font-bold">
-                Global Executive Leadership
+          <div className="flex flex-col items-center">
+            <div className="inline-flex flex-col items-center p-4 rounded-2xl badge-info min-w-[240px]">
+              <span className="text-[10px] uppercase tracking-widest font-extrabold">
+                {isId ? "Pimpinan Eksekutif Global" : "Global Executive Leadership"}
               </span>
               <span className="text-base font-extrabold mt-1">
                 {employees[0]?.name || "Nadia Kusuma"}
               </span>
-              <span className="text-xs hr-muted">{employees[0]?.role}</span>
+              <span className="text-xs opacity-80">{employees[0]?.role}</span>
+              <span className="text-[10px] font-mono mt-1 opacity-75">
+                {isId ? "Rentang Kendali:" : "Span of Control:"} {employees.length - 1} {isId ? "Karyawan" : "Reports"}
+              </span>
             </div>
+            <div className="w-0.5 h-6 bg-indigo-300 dark:bg-indigo-700" />
+            <div className="w-3/4 h-0.5 bg-indigo-200 dark:bg-indigo-800/80 hidden md:block" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {departments.map((dept) => {
               const members = employees.filter((e) => e.department === dept);
+              const lead = members[0];
+              const directs = members.slice(1);
               return (
-                <div key={dept} className="p-4 rounded-2xl hr-subtle space-y-3">
+                <div key={dept} className="p-4 rounded-2xl hr-subtle space-y-3 relative">
                   <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
                     <span className="text-xs font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">
                       {dept}
                     </span>
                     <span className="badge-info text-[10px] px-2 py-0.5 rounded-full font-bold">
-                      {members.length}
+                      {members.length} {isId ? "org" : "hc"}
                     </span>
                   </div>
-                  <div className="space-y-2">
-                    {members.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => handleSelectEmp(m)}
-                        className="w-full text-left p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 flex items-center gap-2.5 transition"
+                  {lead && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectEmp(lead)}
+                      className="w-full text-left p-3 rounded-xl bg-white dark:bg-slate-900 border-2 border-indigo-200 dark:border-indigo-500/40 hover:border-indigo-500 flex items-center gap-2.5 transition"
+                    >
+                      <div
+                        className={`w-9 h-9 rounded-lg bg-gradient-to-br ${lead.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0`}
                       >
-                        <div
-                          className={`w-8 h-8 rounded-lg bg-gradient-to-br ${m.avatarColor} flex items-center justify-center text-[11px] font-bold text-white shrink-0`}
+                        {lead.avatarInitials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-extrabold truncate">{lead.name}</div>
+                        <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold truncate">
+                          {lead.role}
+                        </div>
+                        <div className="text-[9px] hr-muted">
+                          {isId ? "Lapor ke:" : "Reports to:"} {lead.managerName}
+                        </div>
+                      </div>
+                    </button>
+                  )}
+                  {directs.length > 0 && (
+                    <div className="pl-4 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-2 ml-3">
+                      {directs.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => handleSelectEmp(m)}
+                          className="w-full text-left p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-indigo-500 flex items-center gap-2.5 transition"
                         >
-                          {m.avatarInitials}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold truncate">{m.name}</div>
-                          <div className="text-[10px] hr-muted truncate">{m.role}</div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                          <div
+                            className={`w-7 h-7 rounded-lg bg-gradient-to-br ${m.avatarColor} flex items-center justify-center text-[10px] font-bold text-white shrink-0`}
+                          >
+                            {m.avatarInitials}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold truncate">{m.name}</div>
+                            <div className="text-[10px] hr-muted truncate">{m.role}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -528,7 +617,9 @@ export default function EmployeesPage() {
             </div>
 
             <div>
-              <div className="text-xs font-bold hr-muted mb-2">Verified Core Skills</div>
+              <div className="text-xs font-bold hr-muted mb-2">
+                {isId ? "Keahlian Terverifikasi" : "Verified Core Skills"}
+              </div>
               <div className="flex flex-wrap gap-1.5">
                 {selectedEmp.skills.map((s) => (
                   <span key={s} className="badge-info px-2.5 py-1 rounded-lg text-xs font-semibold">
@@ -539,7 +630,9 @@ export default function EmployeesPage() {
             </div>
 
             <div className="space-y-2 pt-3 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-              <div className="text-xs font-bold hr-muted mb-2">Instant Actions</div>
+              <div className="text-xs font-bold hr-muted mb-2">
+                {isId ? "Aksi Cepat" : "Instant Actions"}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <a
                   href={`https://wa.me/${selectedEmp.phone}`}
@@ -598,9 +691,8 @@ export default function EmployeesPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        offboardEmployee(selectedEmp.id);
-                        setSelectedEmp(null);
-                        setEditingEmp(false);
+                        setOffboardTarget(selectedEmp);
+                        setOffboardConfirmText("");
                       }}
                       className="py-2 rounded-xl text-xs font-bold badge-danger"
                     >
@@ -793,6 +885,71 @@ export default function EmployeesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Type-to-Confirm Destructive Offboarding Safety Modal */}
+      {offboardTarget && canManageEmployees && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm"
+          onClick={() => setOffboardTarget(null)}
+        >
+          <div
+            className="w-full max-w-md hr-card rounded-2xl p-6 space-y-4 border-l-4 border-l-rose-600"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-base font-extrabold text-rose-600 dark:text-rose-400">
+                  {isId ? "Konfirmasi Offboarding (Protokol Leaver)" : "Confirm Employee Offboarding (Leaver)"}
+                </h3>
+                <p className="text-xs hr-muted mt-1 leading-relaxed">
+                  {isId
+                    ? `Tindakan ini akan mencabut akses SSO ${offboardTarget.name}, menandai aset IT sebagai Pending Return, dan membuat Checklist Exit otomatis.`
+                    : `This will revoke SSO tokens for ${offboardTarget.name}, mark corporate IT assets as Pending Return, and generate an Exit Checklist.`}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-1.5 text-xs">
+              <label className="block font-bold hr-muted">
+                {isId
+                  ? `Ketik "${offboardTarget.employeeCode}" atau "OFFBOARD" untuk konfirmasi:`
+                  : `Type "${offboardTarget.employeeCode}" or "OFFBOARD" to confirm:`}
+              </label>
+              <input
+                value={offboardConfirmText}
+                onChange={(e) => setOffboardConfirmText(e.target.value)}
+                placeholder={offboardTarget.employeeCode}
+                className="w-full px-3.5 py-2.5 rounded-xl hr-input font-mono font-bold"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOffboardTarget(null)}
+                className="hr-btn-secondary px-4 py-2 rounded-xl text-xs font-semibold"
+              >
+                {isId ? "Batal" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                disabled={
+                  offboardConfirmText.trim().toUpperCase() !== "OFFBOARD" &&
+                  offboardConfirmText.trim().toUpperCase() !== offboardTarget.employeeCode.toUpperCase()
+                }
+                onClick={() => {
+                  offboardEmployee(offboardTarget.id);
+                  setOffboardTarget(null);
+                  setSelectedEmp(null);
+                  setEditingEmp(false);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-40"
+              >
+                {isId ? "Eksekusi Offboard" : "Confirm Offboard"}
+              </button>
+            </div>
           </div>
         </div>
       )}

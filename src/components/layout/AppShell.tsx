@@ -39,6 +39,8 @@ import {
   Building2,
   Check,
   Trash2,
+  UserCircle2,
+  Briefcase,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { getDict, tRole } from "@/lib/i18n";
@@ -117,7 +119,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname?.startsWith("/assess/") ||
     pathname === "/login" ||
     pathname === "/signup" ||
-    pathname === "/forgot-password";
+    pathname === "/forgot-password" ||
+    pathname === "/careers";
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -196,7 +199,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const rawGroups: { title: string; items: NavItem[] }[] = [
     {
       title: dict.groups.overview,
-      items: [{ href: "/", label: dict.nav.dashboard, icon: LayoutDashboard }],
+      items: [
+        { href: "/", label: dict.nav.dashboard, icon: LayoutDashboard },
+        { href: "/profile", label: dict.nav.profile, icon: UserCircle2 },
+      ],
     },
     {
       title: dict.groups.coreHr,
@@ -284,8 +290,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const currentNavItem = allNavFlat.find((n) =>
     n.href === "/" ? pathname === "/" : pathname?.startsWith(n.href)
   );
-  const activeEntityMeta =
+  const baseEntityMeta =
     ENTITY_OPTIONS.find((e) => e.id === selectedEntity) || ENTITY_OPTIONS[0];
+  const activeEntityMeta =
+    selectedEntity === "ALL" && authUser.companyName
+      ? { ...baseEntityMeta, label: authUser.companyName }
+      : baseEntityMeta;
 
   const visibleNotifications = notifications.filter((n) => {
     if (notifFilter === "unread") return !n.read;
@@ -313,12 +323,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       subtitle: `Go to ${n.href}`,
       action: () => router.push(n.href),
     })),
-    {
-      id: "action-invite",
-      title: isId ? "Kirim Undangan Psikotes (Email + WhatsApp)" : "Send Email & WhatsApp Test Invite",
-      subtitle: "HMAC-SHA256 signed link + QR + wa.me",
-      action: () => openInviteModal(),
-    },
+    ...(hasPermission("assessments:manage")
+      ? [
+          {
+            id: "action-invite",
+            title: isId ? "Kirim Undangan Psikotes (Email + WhatsApp)" : "Send Email & WhatsApp Test Invite",
+            subtitle: "HMAC-SHA256 signed link + QR + wa.me",
+            action: () => openInviteModal(),
+          },
+        ]
+      : []),
+    ...(hasPermission("recruitment:manage")
+      ? [
+          {
+            id: "action-careers",
+            title: isId ? "Portal Karir Publik & AI CV Matcher" : "Public Career Portal & AI CV Matcher",
+            subtitle: "/careers — External Applicant Funnel",
+            action: () => router.push("/careers"),
+          },
+        ]
+      : []),
     {
       id: "action-login",
       title: isId ? "Halaman Login / Ganti Akun" : "Sign In / Switch Account",
@@ -331,12 +355,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       subtitle: "/signup — 2-step Enterprise Setup",
       action: () => router.push("/signup"),
     },
-    ...employees.slice(0, 6).map((e) => ({
-      id: e.id,
-      title: e.name,
-      subtitle: `${e.role} · ${e.location}`,
-      action: () => router.push("/employees"),
-    })),
+    ...(activeRole === "Employee"
+      ? []
+      : employees.slice(0, 6).map((e) => ({
+          id: e.id,
+          title: e.name,
+          subtitle: `${e.role} · ${e.location}`,
+          action: () => router.push("/employees"),
+        }))),
   ].filter(
     (c) =>
       !cmdQuery.trim() ||
@@ -527,6 +553,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
               <div className="pt-1.5 border-t border-slate-200 dark:border-slate-800 space-y-0.5">
                 <Link
+                  href="/profile"
+                  onClick={() => setProfileMenuOpen(false)}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium"
+                >
+                  <UserCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                  {isId ? "Profil & ESS Pribadi Saya" : "My Personal ESS Profile"}
+                </Link>
+                <Link
+                  href="/careers"
+                  onClick={() => setProfileMenuOpen(false)}
+                  className="w-full px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium"
+                >
+                  <Briefcase className="w-3.5 h-3.5 text-teal-600" />
+                  {isId ? "Portal Karir Publik (/careers)" : "Public Career Portal"}
+                </Link>
+                <Link
                   href="/login"
                   onClick={() => setProfileMenuOpen(false)}
                   className="w-full px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 font-medium"
@@ -572,10 +614,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="hidden md:flex items-center gap-2 text-xs shrink-0">
-              <span className="text-slate-400 font-medium">{activeEntityMeta.label}</span>
+            <div className="hidden lg:flex items-center gap-2 text-xs shrink-0">
+              <span className="text-slate-400 font-medium max-w-[130px] truncate">
+                {activeEntityMeta.label}
+              </span>
               <span className="text-slate-300 dark:text-slate-700">/</span>
-              <span className="font-bold text-slate-900 dark:text-white">
+              <span className="font-bold text-slate-900 dark:text-white whitespace-nowrap">
                 {currentNavItem?.label || dict.nav.dashboard}
               </span>
             </div>
@@ -598,7 +642,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Global Display Currency"
               value={displayCurrency}
               onChange={(e) => setDisplayCurrency(e.target.value as Currency)}
-              className="px-2 py-1.5 rounded-lg text-xs font-mono font-bold hr-input cursor-pointer"
+              className="h-8 px-2 rounded-lg text-xs font-mono font-bold hr-input cursor-pointer whitespace-nowrap shrink-0"
               title={dict.topbar.currencyTitle}
             >
               {ALL_CURRENCIES.map((c) => (
@@ -613,7 +657,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               aria-label="Active RBAC Role"
               value={activeRole}
               onChange={(e) => switchRole(e.target.value as ActiveRole)}
-              className="hidden xl:block px-2.5 py-1.5 rounded-lg text-xs font-bold hr-input cursor-pointer"
+              className="hidden xl:block h-8 px-2.5 rounded-lg text-xs font-bold hr-input cursor-pointer whitespace-nowrap shrink-0"
               title={isId ? "Ganti Role Akses RBAC" : "Switch Active RBAC Role"}
             >
               {ALL_ROLES.map((r) => (
@@ -772,12 +816,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
 
             <Link
-              href="/login"
-              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-xs font-semibold"
-              title="Sign In / Switch Account"
+              href="/profile"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 text-xs font-semibold"
+              title={isId ? "Profil & Keamanan Akun ESS" : "My Account & ESS Profile"}
             >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>{isId ? "Akun" : "Auth"}</span>
+              <UserCircle2 className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>{isId ? "Profil" : "Profile"}</span>
             </Link>
           </div>
         </header>

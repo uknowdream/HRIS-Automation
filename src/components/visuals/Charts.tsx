@@ -80,8 +80,7 @@ export function RadarChart({
               y={labelPt.y}
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="currentColor"
-              className="text-[10px] font-semibold fill-slate-400"
+              className="text-[10px] font-semibold fill-slate-500 dark:fill-slate-400"
             >
               {d.label}
             </text>
@@ -104,7 +103,7 @@ export function RadarChart({
             cy={pt.y}
             r="3.8"
             fill={color}
-            stroke="#060913"
+            stroke="var(--bg-card)"
             strokeWidth="1.5"
           />
         );

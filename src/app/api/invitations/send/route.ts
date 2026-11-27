@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { signInviteToken, signWebhookPayload } from "@/lib/token";
-import { checkRateLimit, escapeHtml } from "@/lib/security";
+import { checkRateLimit, escapeHtml, isSafeExternalUrl } from "@/lib/security";
 import { ASSESSMENT_PRESETS } from "@/lib/psychometrics";
 import type { AssessmentCategory } from "@/types/hris";
 
@@ -312,30 +312,36 @@ export async function POST(request: NextRequest) {
           whatsappDetail = "1-Click WhatsApp launcher ready";
         }
       } else if (gwUrl && cleanPhone) {
-        try {
-          const gwRes = await fetch(gwUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...(gwToken ? { Authorization: gwToken } : {}),
-            },
-            body: JSON.stringify({
-              target: cleanPhone,
-              phone: cleanPhone,
-              message: waMessage,
-              inviteUrl,
-            }),
-          });
-          if (gwRes.ok) {
-            whatsappStatus = "Delivered (API)";
-            whatsappDetail = `Dispatched via WhatsApp Gateway (${gwUrl}) to +${cleanPhone}`;
-          } else {
-            whatsappStatus = "Ready (wa.me Dispatch)";
-            whatsappDetail = `Gateway returned ${gwRes.status}; 1-Click wa.me ready`;
-          }
-        } catch {
+        if (!isSafeExternalUrl(gwUrl).safe) {
           whatsappStatus = "Ready (wa.me Dispatch)";
-          whatsappDetail = "Gateway offline — 1-Click wa.me launcher ready";
+          whatsappDetail = "Blocked unsafe internal WhatsApp gateway URL (OWASP SSRF Guard) — 1-Click wa.me ready";
+        } else {
+          try {
+            const gwRes = await fetch(gwUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(gwToken ? { Authorization: gwToken } : {}),
+              },
+              body: JSON.stringify({
+                target: cleanPhone,
+                phone: cleanPhone,
+                message: waMessage,
+                inviteUrl,
+              }),
+              signal: AbortSignal.timeout(4000),
+            });
+            if (gwRes.ok) {
+              whatsappStatus = "Delivered (API)";
+              whatsappDetail = `Dispatched via WhatsApp Gateway (${gwUrl}) to +${cleanPhone}`;
+            } else {
+              whatsappStatus = "Ready (wa.me Dispatch)";
+              whatsappDetail = `Gateway returned ${gwRes.status}; 1-Click wa.me ready`;
+            }
+          } catch {
+            whatsappStatus = "Ready (wa.me Dispatch)";
+            whatsappDetail = "Gateway offline — 1-Click wa.me launcher ready";
+          }
         }
       } else {
         whatsappStatus = "Ready (wa.me Dispatch)";
@@ -343,10 +349,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 3. OPTIONAL OUTBOUND WEBHOOK / SLACK BROADCAST
+    // 3. OPTIONAL OUTBOUND WEBHOOK / SLACK BROADCAST (Protected by OWASP SSRF Guard)
     let webhookDispatched = false;
     const webhookUrl = body.config?.primaryWebhookUrl || process.env.DEFAULT_WEBHOOK_URL;
-    if (webhookUrl && webhookUrl.startsWith("http")) {
+    if (webhookUrl && isSafeExternalUrl(webhookUrl).safe) {
       const eventPayload = JSON.stringify({
         event: "invitation.sent",
         timestamp: new Date().toISOString(),
@@ -369,6 +375,7 @@ export async function POST(request: NextRequest) {
           "X-AetherHR-Signature": signWebhookPayload(eventPayload, body.config?.webhookSecret),
         },
         body: eventPayload,
+        signal: AbortSignal.timeout(4000),
       }).catch(() => {});
       webhookDispatched = true;
     }

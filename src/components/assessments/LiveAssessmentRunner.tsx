@@ -64,8 +64,13 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
   const isId = lang === "id";
 
   const questions = useMemo(
-    () => selectQuestionsForSession(config.categories, config.expressLimitPerCategory),
-    [config.categories, config.expressLimitPerCategory]
+    () =>
+      selectQuestionsForSession(
+        config.categories,
+        config.expressLimitPerCategory,
+        config.sessionId
+      ),
+    [config.categories, config.expressLimitPerCategory, config.sessionId]
   );
 
   const presetName = useMemo(() => {
@@ -130,6 +135,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          sessionId: config.sessionId,
           candidateName: config.candidateName,
           candidateEmail: config.candidateEmail,
           candidatePhone: config.candidatePhone,
@@ -300,37 +306,41 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
   if (phase === "intro") {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 sm:p-8">
-        <div className="w-full max-w-3xl glass-panel rounded-3xl border border-cyan-500/30 p-6 sm:p-9 space-y-6 shadow-2xl">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
+        <div className="w-full max-w-3xl hr-card rounded-3xl p-6 sm:p-9 space-y-6 shadow-2xl">
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 border-b pb-4"
+            style={{ borderColor: "var(--border-subtle)" }}
+          >
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">
-                {config.companyName} · Proctored Assessment Portal
+              <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+                {config.companyName} · {isId ? "Portal Asesmen Terproktor" : "Proctored Assessment Portal"}
               </div>
               <h1 className="text-2xl sm:text-3xl font-black mt-1">
                 {isId ? "Tes Kemampuan Kognitif & Psikotes Internasional" : "International Cognitive & Psychometric Assessment"}
               </h1>
             </div>
             <button
+              type="button"
               onClick={() => setLang(lang === "id" ? "en" : "id")}
-              className="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-xs font-bold flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl hr-btn-secondary text-xs font-bold flex items-center gap-1.5"
             >
-              <Globe className="w-3.5 h-3.5 text-cyan-400" /> {lang.toUpperCase()}
+              <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> {lang.toUpperCase()}
             </button>
           </div>
 
           {/* Candidate Identity */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800">
-              <div className="text-slate-400">{isId ? "Nama Peserta" : "Candidate"}</div>
-              <div className="font-bold text-sm mt-0.5">{config.candidateName}</div>
+            <div className="p-3.5 rounded-xl hr-subtle">
+              <div className="hr-muted">{isId ? "Nama Peserta" : "Candidate"}</div>
+              <div className="font-extrabold text-sm mt-0.5">{config.candidateName}</div>
             </div>
-            <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800">
-              <div className="text-slate-400">{isId ? "Posisi Target" : "Target Role"}</div>
-              <div className="font-bold text-sm mt-0.5 text-cyan-300">{config.role}</div>
+            <div className="p-3.5 rounded-xl hr-subtle">
+              <div className="hr-muted">{isId ? "Posisi Target" : "Target Role"}</div>
+              <div className="font-extrabold text-sm mt-0.5 text-indigo-600 dark:text-indigo-400">{config.role}</div>
             </div>
-            <div className="p-3.5 rounded-xl bg-slate-900/70 border border-slate-800">
-              <div className="text-slate-400">{isId ? "Total Soal & Durasi" : "Items & Timer"}</div>
-              <div className="font-bold text-sm mt-0.5 text-emerald-400">
+            <div className="p-3.5 rounded-xl hr-subtle">
+              <div className="hr-muted">{isId ? "Total Soal & Durasi" : "Items & Timer"}</div>
+              <div className="font-extrabold text-sm mt-0.5 text-emerald-600 dark:text-emerald-400">
                 {questions.length} {isId ? "Soal" : "Qs"} · {config.durationMinutes}{" "}
                 {isId ? "Menit" : "Mins"}
               </div>
@@ -339,22 +349,21 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
 
           {/* Active Modules Breakdown */}
           <div>
-            <div className="text-xs font-bold text-slate-400 mb-2">
-              {isId ? "Baterai Soal dalam Sesi Ini:" : "Batteries Included in This Session:"}
+            <div className="text-xs font-bold hr-muted mb-2">
+              {isId ? "Baterai Soal dalam Sesi Ini (Acak Terenkripsi per Sesi):" : "Batteries Included in This Session (Seeded Randomization):"}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {config.categories.map((cat) => {
                 const meta = getBatteryMeta(cat);
                 const count = questions.filter((q) => q.category === cat).length;
                 return (
-                  <div
-                    key={cat}
-                    className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs"
-                  >
+                  <div key={cat} className="p-2.5 rounded-xl hr-subtle text-xs">
                     <div className="font-bold truncate" style={{ color: meta.color }}>
                       {meta.shortName[lang]}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{count} items</div>
+                    <div className="text-[11px] hr-muted mt-0.5">
+                      {count} {isId ? "soal" : "items"}
+                    </div>
                   </div>
                 );
               })}
@@ -362,12 +371,12 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
           </div>
 
           {/* Anti-Cheat Proctoring Checklist */}
-          <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 space-y-2.5 text-xs">
-            <div className="font-bold text-indigo-300 flex items-center gap-2">
+          <div className="p-4 rounded-2xl badge-info space-y-2.5 text-xs">
+            <div className="font-extrabold flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" />
               {isId ? "Aturan Integritas & Anti-Cheat Proctoring" : "Integrity & Anti-Cheat Proctoring Rules"}
             </div>
-            <ul className="space-y-1 text-slate-300 list-disc pl-4">
+            <ul className="space-y-1 opacity-90 list-disc pl-4">
               <li>
                 {isId
                   ? "Timer berjalan otomatis dan jawaban langsung tersubmit ketika waktu habis."
@@ -380,26 +389,26 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
               </li>
               <li>
                 {isId
-                  ? "Gunakan tombol 1-5 / A-D atau panah kiri-kanan di keyboard untuk kecepatan maksimal."
-                  : "Use keyboard keys 1-5 / A-D or Left/Right arrows for rapid navigation."}
+                  ? "Urutan soal diacak secara unik untuk sesi Anda; gunakan tombol 1-5 / A-D atau panah kiri-kanan."
+                  : "Question order is uniquely randomized for your session; use keys 1-5 / A-D or Left/Right arrows."}
               </li>
             </ul>
             <div className="flex flex-wrap items-center gap-4 pt-2">
-              <label className="flex items-center gap-2 cursor-pointer font-semibold text-white">
+              <label className="flex items-center gap-2 cursor-pointer font-bold">
                 <input
                   type="checkbox"
                   checked={agreedRules}
                   onChange={(e) => setAgreedRules(e.target.checked)}
-                  className="accent-cyan-400 w-4 h-4"
+                  className="accent-indigo-600 w-4 h-4"
                 />
                 {isId ? "Saya menyetujui aturan integritas ujian" : "I agree to uphold assessment integrity"}
               </label>
               <button
                 type="button"
                 onClick={() => setWebcamChecked(true)}
-                className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900 text-[11px] font-semibold flex items-center gap-1.5 hover:border-cyan-400"
+                className="px-3 py-1.5 rounded-lg hr-btn-secondary text-[11px] font-bold flex items-center gap-1.5"
               >
-                <Camera className="w-3.5 h-3.5 text-cyan-400" />
+                <Camera className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 {webcamChecked
                   ? isId
                     ? "Sensor Perangkat OK ✓"
@@ -414,11 +423,12 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
             <Link
               href="/assessments"
-              className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
+              className="text-xs hr-muted hover:text-indigo-600 flex items-center gap-1 font-semibold"
             >
               <ArrowLeft className="w-4 h-4" /> {isId ? "Kembali ke HRIS" : "Back to HRIS"}
             </Link>
             <button
+              type="button"
               disabled={!agreedRules}
               onClick={() => {
                 setPhase("running");
@@ -440,13 +450,13 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
   if (phase === "submitting") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-600 flex items-center justify-center animate-pulse shadow-2xl">
+        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center animate-pulse shadow-xl">
           <BrainCircuit className="w-9 h-9 text-white" />
         </div>
         <h2 className="text-xl font-black">
           {isId ? "Menghitung Indeks IQ, OCEAN, DISC & Laporan Eksekutif..." : "Computing Cognitive IQ, OCEAN, DISC & Executive Report..."}
         </h2>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs hr-muted">
           {isId ? "Menyinkronkan hasil psikometrik ke ATS & Webhook Otomatisasi..." : "Synchronizing verified results to ATS & Automation Webhooks..."}
         </p>
       </div>
@@ -462,12 +472,12 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
         <div className="no-print flex items-center justify-between">
           <Link
             href="/assessments"
-            className="px-4 py-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl hr-btn-secondary text-xs font-bold flex items-center gap-1.5"
           >
             <ArrowLeft className="w-4 h-4" />
             {isId ? "Kembali ke Assessment Center" : "Back to Assessment Center"}
           </Link>
-          <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5">
+          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4" />
             {isId ? "Laporan Tersimpan di HRIS & ATS" : "Report Saved to HRIS & ATS"}
           </span>
@@ -488,7 +498,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Top Sticky Exam Bar */}
-      <header className="sticky top-0 z-30 glass-panel border-b border-slate-800 px-4 sm:px-6 py-3">
+      <header className="sticky top-0 z-30 bg-white/95 dark:bg-[#0d1117]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 py-3">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div
@@ -499,7 +509,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
             </div>
             <div className="min-w-0">
               <div className="text-xs font-black truncate">{battery.name[lang]}</div>
-              <div className="text-[11px] text-slate-400 truncate">
+              <div className="text-[11px] hr-muted truncate">
                 {config.candidateName} · {answeredCount}/{questions.length}{" "}
                 {isId ? "Terjawab" : "Answered"} ({progressPct}%)
               </div>
@@ -511,10 +521,10 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
             <div
               className={`px-3.5 py-2 rounded-xl font-mono text-sm font-black flex items-center gap-2 border ${
                 criticalTime
-                  ? "bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse"
+                  ? "badge-danger animate-pulse"
                   : lowTime
-                  ? "bg-amber-500/20 border-amber-500 text-amber-300"
-                  : "bg-slate-900 border-cyan-500/40 text-cyan-300"
+                  ? "badge-warning"
+                  : "badge-info"
               }`}
             >
               <Clock className="w-4 h-4" />
@@ -522,21 +532,24 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
             </div>
 
             <button
+              type="button"
               onClick={requestFullscreen}
-              className="hidden sm:flex p-2 rounded-xl border border-slate-700 hover:bg-slate-800 text-slate-300"
+              className="hidden sm:flex p-2 rounded-xl hr-btn-secondary"
               title="Fullscreen Focus Mode"
             >
               <Maximize2 className="w-4 h-4" />
             </button>
 
             <button
+              type="button"
               onClick={() => setLang(lang === "id" ? "en" : "id")}
-              className="px-2.5 py-2 rounded-xl border border-slate-700 text-xs font-bold"
+              className="px-2.5 py-2 rounded-xl hr-btn-secondary text-xs font-bold"
             >
               {lang.toUpperCase()}
             </button>
 
             <button
+              type="button"
               onClick={() => setConfirmSubmitOpen(true)}
               className="btn-emerald px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
             >
@@ -547,9 +560,9 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
         </div>
 
         {/* Progress Bar */}
-        <div className="max-w-7xl mx-auto mt-2.5 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+        <div className="max-w-7xl mx-auto mt-2.5 h-1.5 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-cyan-400 via-indigo-400 to-emerald-400 transition-all duration-300"
+            className="h-full bg-gradient-to-r from-indigo-600 via-blue-500 to-emerald-500 transition-all duration-300"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -557,7 +570,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
 
       {/* Proctoring Alert Banner */}
       {warningBanner && (
-        <div className="bg-amber-500/20 border-b border-amber-500/40 px-4 py-2 text-center text-xs font-bold text-amber-200 flex items-center justify-center gap-2">
+        <div className="badge-warning border-b px-4 py-2 text-center text-xs font-bold flex items-center justify-center gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{warningBanner}</span>
         </div>
@@ -566,7 +579,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
       {/* Main Split Workspace */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Question Card */}
-        <div className="lg:col-span-8 glass-card rounded-3xl p-5 sm:p-8 space-y-6 select-none">
+        <div className="lg:col-span-8 hr-card rounded-3xl p-5 sm:p-8 space-y-6 select-none">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span
@@ -575,7 +588,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
               >
                 {battery.shortName[lang]} · Q{currentIndex + 1}/{questions.length}
               </span>
-              <span className="px-2 py-1 rounded-lg text-[10px] font-mono bg-slate-800 text-slate-300">
+              <span className="px-2 py-1 rounded-lg text-[10px] font-mono hr-subtle hr-muted font-bold">
                 {currentQ.difficulty === 3
                   ? "Executive Tier"
                   : currentQ.difficulty === 2
@@ -585,13 +598,12 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
             </div>
 
             <button
+              type="button"
               onClick={() =>
                 setFlagged((prev) => ({ ...prev, [currentQ.id]: !prev[currentQ.id] }))
               }
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition ${
-                flagged[currentQ.id]
-                  ? "bg-amber-500/20 border-amber-400 text-amber-300"
-                  : "border-slate-700 text-slate-400 hover:text-white"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border transition ${
+                flagged[currentQ.id] ? "badge-warning" : "hr-btn-secondary"
               }`}
             >
               <Flag className="w-3.5 h-3.5" />
@@ -607,20 +619,20 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
 
           {/* Context Box if any */}
           {currentQ.context && (
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-cyan-500/25 text-xs sm:text-sm text-cyan-100 leading-relaxed">
+            <div className="p-4 rounded-2xl badge-info text-xs sm:text-sm leading-relaxed">
               {currentQ.context[lang]}
             </div>
           )}
 
           {/* Prompt */}
-          <h2 className="text-base sm:text-lg font-bold leading-relaxed whitespace-pre-line">
+          <h2 className="text-base sm:text-lg font-extrabold leading-relaxed whitespace-pre-line">
             {currentQ.prompt[lang]}
           </h2>
 
           {/* Visual 3x3 Raven Matrix if format === "matrix" */}
           {currentQ.format === "matrix" && currentQ.matrixVisual && (
             <div className="space-y-5">
-              <div className="inline-grid grid-cols-3 gap-2.5 p-4 rounded-2xl bg-slate-900/85 border border-slate-700/80 mx-auto">
+              <div className="matrix-dark-board inline-grid grid-cols-3 gap-2.5 p-4 rounded-2xl bg-slate-900 border border-slate-700 mx-auto">
                 {currentQ.matrixVisual.grid.map((spec, idx) => (
                   <MatrixCellSvg
                     key={`${currentQ.id}-g-${idx}`}
@@ -637,17 +649,18 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
                   const selected = answers[currentQ.id] === optId;
                   return (
                     <button
+                      type="button"
                       key={optId}
                       onClick={() =>
                         setAnswers((prev) => ({ ...prev, [currentQ.id]: optId }))
                       }
-                      className={`p-3 rounded-2xl border flex flex-col items-center gap-2 transition ${
+                      className={`matrix-dark-board p-3 rounded-2xl border flex flex-col items-center gap-2 transition ${
                         selected
-                          ? "border-cyan-400 bg-cyan-500/18 shadow-lg shadow-cyan-500/15"
-                          : "border-slate-700/70 bg-slate-900/50 hover:border-slate-500"
+                          ? "border-indigo-400 bg-indigo-950 ring-2 ring-indigo-500/40"
+                          : "border-slate-700 bg-slate-900 hover:border-indigo-400"
                       }`}
                     >
-                      <span className="text-xs font-black uppercase text-cyan-300">
+                      <span className="text-xs font-black uppercase text-white on-dark">
                         {optId.toUpperCase()}
                       </span>
                       <MatrixCellSvg
@@ -669,21 +682,22 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
                 const selected = answers[currentQ.id] === opt.id;
                 return (
                   <button
+                    type="button"
                     key={opt.id}
                     onClick={() =>
                       setAnswers((prev) => ({ ...prev, [currentQ.id]: opt.id }))
                     }
                     className={`w-full text-left p-4 rounded-2xl border flex items-start gap-3.5 transition ${
                       selected
-                        ? "border-cyan-400 bg-cyan-500/15 shadow-md shadow-cyan-500/10"
-                        : "border-slate-700/70 bg-slate-900/50 hover:border-slate-500"
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/15 shadow-xs"
+                        : "hr-subtle hover:border-indigo-400"
                     }`}
                   >
                     <span
                       className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black uppercase shrink-0 ${
                         selected
-                          ? "bg-cyan-400 text-slate-950"
-                          : "bg-slate-800 text-slate-300"
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
                       }`}
                     >
                       {currentQ.format === "likert" ? idx + 1 : opt.id.toUpperCase()}
@@ -698,17 +712,22 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
           )}
 
           {/* Bottom Nav Buttons */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800">
+          <div
+            className="flex items-center justify-between pt-4 border-t"
+            style={{ borderColor: "var(--border-subtle)" }}
+          >
             <button
+              type="button"
               disabled={currentIndex === 0}
               onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40"
+              className="px-4 py-2.5 rounded-xl hr-btn-secondary text-xs font-bold flex items-center gap-1.5 disabled:opacity-40"
             >
               <ChevronLeft className="w-4 h-4" /> {isId ? "Sebelumnya" : "Previous"}
             </button>
 
             {currentIndex < questions.length - 1 ? (
               <button
+                type="button"
                 onClick={() =>
                   setCurrentIndex((i) => Math.min(questions.length - 1, i + 1))
                 }
@@ -719,6 +738,7 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
               </button>
             ) : (
               <button
+                type="button"
                 onClick={() => setConfirmSubmitOpen(true)}
                 className="btn-emerald px-6 py-2.5 rounded-xl text-xs font-black flex items-center gap-1.5"
               >
@@ -731,10 +751,10 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
 
         {/* Right Side Question Navigator & Proctoring Telemetry */}
         <aside className="lg:col-span-4 space-y-4">
-          <div className="glass-card rounded-2xl p-5 space-y-3">
+          <div className="hr-card rounded-2xl p-5 space-y-3">
             <div className="flex items-center justify-between text-xs font-bold">
               <span>{isId ? "Navigator Soal" : "Question Navigator"}</span>
-              <span className="text-cyan-400 font-mono">
+              <span className="text-indigo-600 dark:text-indigo-400 font-mono">
                 {answeredCount}/{questions.length}
               </span>
             </div>
@@ -745,16 +765,17 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
                 const isFlag = Boolean(flagged[q.id]);
                 return (
                   <button
+                    type="button"
                     key={q.id}
                     onClick={() => setCurrentIndex(idx)}
                     className={`h-8 rounded-lg text-[11px] font-mono font-bold transition border ${
                       isCurrent
-                        ? "border-cyan-400 bg-cyan-500/25 text-white ring-2 ring-cyan-400/40"
+                        ? "border-indigo-600 bg-indigo-600 text-white ring-2 ring-indigo-500/30"
                         : isFlag
-                        ? "border-amber-400/70 bg-amber-500/20 text-amber-200"
+                        ? "badge-warning"
                         : isAns
-                        ? "border-emerald-500/40 bg-emerald-500/18 text-emerald-300"
-                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-600"
+                        ? "badge-success"
+                        : "hr-subtle hr-muted hover:border-indigo-400"
                     }`}
                   >
                     {idx + 1}
@@ -762,30 +783,36 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
                 );
               })}
             </div>
-            <div className="flex flex-wrap gap-3 text-[10px] text-slate-400 pt-2 border-t border-slate-800">
+            <div
+              className="flex flex-wrap gap-3 text-[10px] hr-muted pt-2 border-t"
+              style={{ borderColor: "var(--border-subtle)" }}
+            >
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-emerald-500/40 border border-emerald-400" />
+                <span className="w-2.5 h-2.5 rounded badge-success" />
                 {isId ? "Terjawab" : "Answered"}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-amber-500/40 border border-amber-400" />
+                <span className="w-2.5 h-2.5 rounded badge-warning" />
                 {isId ? "Ditandai" : "Flagged"}
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded bg-slate-800 border border-slate-600" />
+                <span className="w-2.5 h-2.5 rounded hr-subtle" />
                 {isId ? "Belum" : "Unvisited"}
               </span>
             </div>
           </div>
 
-          <div className="glass-card rounded-2xl p-4 space-y-2 text-xs">
-            <div className="flex items-center justify-between font-bold text-emerald-400">
+          <div className="hr-card rounded-2xl p-4 space-y-2 text-xs">
+            <div className="flex items-center justify-between font-bold text-emerald-600 dark:text-emerald-400">
               <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4" /> Proctoring Active
+                <ShieldCheck className="w-4 h-4" />
+                {isId ? "Proctoring Aktif" : "Proctoring Active"}
               </span>
-              <span className="font-mono">{proctoringEvents.length} flags</span>
+              <span className="font-mono">
+                {proctoringEvents.length} {isId ? "bendera" : "flags"}
+              </span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
+            <p className="text-[11px] hr-muted leading-relaxed">
               {isId
                 ? "Sesi ini dilindungi anti-cheat real-time. Jawaban tersimpan otomatis di browser Anda."
                 : "Protected by real-time integrity monitoring. Answers auto-save locally."}
@@ -797,17 +824,17 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
       {/* Submit Confirmation Modal */}
       {confirmSubmitOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-sm"
           onClick={() => setConfirmSubmitOpen(false)}
         >
           <div
-            className="w-full max-w-md glass-panel rounded-2xl border border-cyan-500/35 p-6 space-y-4"
+            className="w-full max-w-md hr-card rounded-2xl p-6 space-y-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-black">
+            <h3 className="text-lg font-extrabold">
               {isId ? "Konfirmasi Pengumpulan Tes" : "Confirm Assessment Submission"}
             </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
+            <p className="text-xs hr-muted leading-relaxed">
               {isId
                 ? `Anda telah menjawab ${answeredCount} dari ${questions.length} soal dengan sisa waktu ${formatTimer(
                     secondsLeft
@@ -818,12 +845,14 @@ export function LiveAssessmentRunner({ config }: { config: RunnerConfig }) {
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
+                type="button"
                 onClick={() => setConfirmSubmitOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold border border-slate-700"
+                className="px-4 py-2 rounded-xl text-xs font-semibold hr-btn-secondary"
               >
                 {isId ? "Kembali ke Soal" : "Continue Testing"}
               </button>
               <button
+                type="button"
                 onClick={() => void finalizeAssessment()}
                 className="btn-emerald px-5 py-2 rounded-xl text-xs font-black"
               >

@@ -227,17 +227,38 @@ export const ASSESSMENT_PRESETS: AssessmentPreset[] = [
   },
 ];
 
+function deterministicShuffle<T>(items: T[], seedStr: string): T[] {
+  const arr = [...items];
+  let seed = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) {
+    seed ^= seedStr.charCodeAt(i);
+    seed = Math.imul(seed, 16777619);
+  }
+  for (let i = arr.length - 1; i > 0; i--) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const j = seed % (i + 1);
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
 export function selectQuestionsForSession(
   categories: AssessmentCategory[],
-  expressLimitPerCategory?: number
+  expressLimitPerCategory?: number,
+  sessionSeed?: string
 ): AssessmentQuestion[] {
   const result: AssessmentQuestion[] = [];
   for (const cat of categories) {
-    const items = ALL_QUESTIONS.filter((q) => q.category === cat);
+    const rawItems = ALL_QUESTIONS.filter((q) => q.category === cat);
+    const pool = sessionSeed
+      ? deterministicShuffle(rawItems, `${sessionSeed}:${cat}`)
+      : rawItems;
     if (expressLimitPerCategory && expressLimitPerCategory > 0) {
-      result.push(...items.slice(0, expressLimitPerCategory));
+      result.push(...pool.slice(0, expressLimitPerCategory));
     } else {
-      result.push(...items);
+      result.push(...pool);
     }
   }
   return result;

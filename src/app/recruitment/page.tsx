@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   UserPlus,
   Send,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { RBACGuard } from "@/components/security/RBACGuard";
+import { tStatus } from "@/lib/i18n";
 import type { CandidateStage } from "@/types/hris";
 
 const STAGES: CandidateStage[] = [
@@ -199,6 +201,13 @@ export default function RecruitmentPage() {
                 Bulk Table
               </button>
             </div>
+            <Link
+              href="/careers"
+              className="px-3.5 py-2 rounded-xl text-xs font-bold hr-btn-secondary flex items-center gap-1.5"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-emerald-600" />
+              {isId ? "Portal Karir (/careers)" : "Career Portal"}
+            </Link>
             <button
               type="button"
               onClick={() => setAddOpen(true)}
@@ -261,7 +270,7 @@ export default function RecruitmentPage() {
             const count = candidates.filter((c) => c.stage === st).length;
             return (
               <div key={st} className="hr-card rounded-xl p-3.5 flex items-center justify-between">
-                <span className="text-xs font-semibold hr-muted">{st}</span>
+                <span className="text-xs font-semibold hr-muted">{tStatus(st, locale)}</span>
                 <span className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400 tabular-nums">
                   {count}
                 </span>
@@ -279,7 +288,7 @@ export default function RecruitmentPage() {
               return (
                 <div key={stage} className="hr-card rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b" style={{ borderColor: "var(--border-subtle)" }}>
-                    <span className="text-xs font-extrabold uppercase tracking-wider">{stage}</span>
+                    <span className="text-xs font-extrabold uppercase tracking-wider">{tStatus(stage, locale)}</span>
                     <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">
                       {stageItems.length}
                     </span>
@@ -299,11 +308,18 @@ export default function RecruitmentPage() {
                                 {cand.role}
                               </div>
                             </div>
-                            {cand.cognitiveIq && (
-                              <span className="badge-success px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0">
-                                IQ {cand.cognitiveIq}
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {cand.cognitiveIq && (
+                                <span className="badge-success px-2 py-0.5 rounded-md text-[10px] font-mono font-bold">
+                                  IQ {cand.cognitiveIq}
+                                </span>
+                              )}
+                              {cand.psychometricFit && !cand.cognitiveIq && (
+                                <span className="badge-info px-2 py-0.5 rounded-md text-[10px] font-mono font-bold">
+                                  AI {cand.psychometricFit}%
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <div className="text-[10px] hr-muted truncate">
                             {cand.location} · {cand.source} · {cand.expectedSalary}

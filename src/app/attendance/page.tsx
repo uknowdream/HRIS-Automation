@@ -14,14 +14,19 @@ import {
   MessageCircle,
   Zap,
   Lock,
+  AlertTriangle,
+  Sparkles,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { tRole, tStatus } from "@/lib/i18n";
+import { calculateOvertimePayKepmenaker, formatCurrency } from "@/lib/payroll-engine";
+import { formatConverted } from "@/lib/currency";
 import type { LeaveRequest } from "@/types/hris";
 
 export default function AttendancePage() {
   const {
     locale,
+    displayCurrency,
     activeRole,
     currentEmployee,
     hasPermission,
@@ -31,15 +36,19 @@ export default function AttendancePage() {
     attendance,
     shiftRoster,
     leaves,
+    overtimeRequests,
     clockInEmployee,
     clockOutEmployee,
     cycleShiftCell,
     submitLeaveRequest,
     decideLeaveRequest,
+    submitOvertimeRequest,
+    decideOvertimeRequest,
   } = useHRIS();
   const isId = locale === "id";
 
   const canApproveLeave = hasPermission("attendance:approve");
+  const canFinalApproveLeave = hasPermission("employees:manage");
   const canManageRoster = hasPermission("roster:manage");
   const canEditSettings = hasPermission("settings:manage");
   const isEss = activeRole === "Employee";
@@ -53,6 +62,12 @@ export default function AttendancePage() {
   const [startDate, setStartDate] = useState("2026-12-15");
   const [endDate, setEndDate] = useState("2026-12-16");
   const [reason, setReason] = useState("");
+
+  // Overtime (SPL Kepmenaker) state
+  const [otDate, setOtDate] = useState("2026-11-27");
+  const [otHours, setOtHours] = useState(3);
+  const [otHoliday, setOtHoliday] = useState(false);
+  const [otReason, setOtReason] = useState("");
 
   useEffect(() => {
     setSelectedEmpId(currentEmployee.id);
@@ -134,6 +149,54 @@ export default function AttendancePage() {
   const visibleAttendance = isEss
     ? attendance.filter((a) => a.employeeId === currentEmployee.id)
     : attendance;
+
+  const visibleOvertime = isEss
+    ? overtimeRequests.filter((o) => o.employeeId === currentEmployee.id)
+    : overtimeRequests;
+
+  // Team Leave Overlap & Conflict Radar (detects same-department overlapping leave dates)
+  const leaveConflicts = (() => {
+    const active = leaves.filter((l) => l.status !== "Rejected");
+    const pairs: { dept: string; names: string; window: string }[] = [];
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const a = active[i];
+        const b = active[j];
+        if (
+          a.department === b.department &&
+          a.employeeId !== b.employeeId &&
+          a.startDate <= b.endDate &&
+          b.startDate <= a.endDate
+        ) {
+          pairs.push({
+            dept: a.department,
+            names: `${a.employeeName} & ${b.employeeName}`,
+            window: `${a.startDate} ↔ ${b.endDate}`,
+          });
+        }
+      }
+    }
+    return pairs;
+  })();
+
+  const otPreview = calculateOvertimePayKepmenaker(
+    (targetEmployee?.baseSalary || 20000000) + (targetEmployee?.allowances || 0),
+    otHours,
+    otHoliday
+  );
+
+  const handleSubmitOvertime = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetEmployee || !otReason.trim()) return;
+    submitOvertimeRequest({
+      employeeId: targetEmployee.id,
+      date: otDate,
+      hours: otHours,
+      isHoliday: otHoliday,
+      reason: otReason.trim(),
+    });
+    setOtReason("");
+  };
 
   return (
     <div className="space-y-6">
@@ -365,7 +428,7 @@ export default function AttendancePage() {
                         : "badge-warning"
                     }`}
                   >
-                    {rec.status}
+                    {tStatus(rec.status, locale)}
                   </span>
                 </td>
                 <td className="py-3 px-3 text-right">
@@ -407,7 +470,7 @@ export default function AttendancePage() {
           </div>
           {!canManageRoster && (
             <span className="badge-info px-2.5 py-0.5 rounded-full text-[10px] font-bold">
-              Read-Only ({activeRole})
+              {isId ? "Baca-Saja" : "Read-Only"} ({tRole(activeRole, locale)})
             </span>
           )}
         </div>
@@ -462,82 +525,282 @@ export default function AttendancePage() {
         </table>
       </div>
 
-      {/* Leave Approvals Automation Queue */}
-      <div className="hr-card rounded-2xl p-5 space-y-3">
-        <h2 className="text-base font-extrabold flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-amber-500" />
-          {isEss
-            ? isId
-              ? `Status Pengajuan Cuti & WFA Saya (${visibleLeaves.length})`
-              : `My Leave & WFA Requests (${visibleLeaves.length})`
-            : isId
-            ? "Antrean Persetujuan Cuti (Auto-Notifikasi WA/Email)"
-            : "Leave Approval Queue (Auto WA/Email Notification)"}
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {visibleLeaves.map((lv) => (
-            <div
-              key={lv.id}
-              className="p-4 rounded-xl hr-subtle flex flex-col justify-between gap-3"
-            >
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-bold text-sm">{lv.employeeName}</span>
-                  <span
-                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                      lv.status === "Approved"
-                        ? "badge-success"
-                        : lv.status === "Rejected"
-                        ? "badge-danger"
-                        : "badge-warning"
-                    }`}
-                  >
-                    {lv.status}
-                  </span>
-                </div>
-                <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
-                  {lv.type} · {lv.days} {isId ? "Hari" : "Days"} ({lv.startDate} → {lv.endDate})
-                </div>
-                <p className="text-xs hr-muted mt-1.5">{lv.reason}</p>
-              </div>
-              <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
-                {lv.status === "Pending" && canApproveLeave ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => decideLeaveRequest(lv.id, "Approved")}
-                      className="flex-1 btn-emerald py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> {isId ? "Setujui" : "Approve"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => decideLeaveRequest(lv.id, "Rejected")}
-                      className="flex-1 py-2 rounded-lg text-xs font-bold badge-danger flex items-center justify-center gap-1"
-                    >
-                      <XCircle className="w-3.5 h-3.5" /> {isId ? "Tolak" : "Reject"}
-                    </button>
-                  </>
-                ) : lv.status === "Pending" ? (
-                  <span className="text-[11px] hr-muted font-semibold">
-                    {isId ? "Menunggu persetujuan Manager / HR" : "Awaiting Manager / HR approval"}
-                  </span>
-                ) : (
-                  <a
-                    href={`https://wa.me/${lv.employeePhone}?text=${encodeURIComponent(
-                      `Halo ${lv.employeeName}, pengajuan ${lv.type} (${lv.startDate} s/d ${lv.endDate}) telah ${lv.status} oleh HRIS AetherHR.`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-1.5 rounded-lg text-xs font-semibold hr-btn-secondary flex items-center justify-center gap-1.5"
-                  >
-                    <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
-                    {isId ? "Kirim Bukti WhatsApp" : "Send WhatsApp Receipt"}
-                  </a>
-                )}
-              </div>
+      {/* Leave Overlap Radar + Leave Approvals Automation Queue (with 2-Stage Governance) */}
+      <div className="hr-card rounded-2xl p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-extrabold flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-amber-500" />
+            {isEss
+              ? isId
+                ? `Status Pengajuan Cuti & WFA Saya (${visibleLeaves.length})`
+                : `My Leave & WFA Requests (${visibleLeaves.length})`
+              : isId
+              ? "Antrean Persetujuan Cuti (2-Tahap >3 Hari & Auto-WA/Email)"
+              : "Leave Approval Queue (2-Stage >3d & Auto WA/Email)"}
+          </h2>
+          {!isEss && (
+            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${leaveConflicts.length > 0 ? "badge-warning" : "badge-success"}`}>
+              {leaveConflicts.length > 0
+                ? isId
+                  ? `${leaveConflicts.length} Bentrok Jadwal Divisi Terdeteksi`
+                  : `${leaveConflicts.length} Dept Overlap Warning`
+                : isId
+                ? "Kalender Tim Aman (0 Bentrok)"
+                : "Team Coverage Clear (0 Overlaps)"}
+            </span>
+          )}
+        </div>
+
+        {!isEss && leaveConflicts.length > 0 && (
+          <div className="p-3 rounded-xl badge-warning text-xs space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {isId ? "Radar Bentrok Jadwal Cuti Tim:" : "Team Leave Overlap Conflict Alert:"}
             </div>
-          ))}
+            {leaveConflicts.map((c, idx) => (
+              <div key={idx} className="text-[11px]">
+                • <strong>{c.dept}</strong>: {c.names} ({c.window})
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {visibleLeaves.map((lv) => {
+            const canActStage1 = lv.status === "Pending" && canApproveLeave;
+            const canActStage2 = lv.status === "Manager Approved" && canFinalApproveLeave;
+            return (
+              <div
+                key={lv.id}
+                className="p-4 rounded-xl hr-subtle flex flex-col justify-between gap-3"
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-sm">{lv.employeeName}</span>
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                        lv.status === "Approved"
+                          ? "badge-success"
+                          : lv.status === "Rejected"
+                          ? "badge-danger"
+                          : lv.status === "Manager Approved"
+                          ? "badge-info"
+                          : "badge-warning"
+                      }`}
+                    >
+                      {tStatus(lv.status, locale)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
+                    {tStatus(lv.type, locale)} · {lv.days} {isId ? "Hari" : "Days"} ({lv.startDate} → {lv.endDate})
+                  </div>
+                  {(lv.requiresTwoStage || lv.days > 3) && (
+                    <div className="text-[10px] hr-muted mt-1 font-semibold">
+                      {isId ? "Alur 2-Tahap:" : "2-Stage Flow:"}{" "}
+                      {lv.stage1Approver ? `✓ ${lv.stage1Approver}` : isId ? "1. Manajer" : "1. Manager"} →{" "}
+                      {lv.stage2Approver ? `✓ ${lv.stage2Approver}` : "2. HR Admin"}
+                    </div>
+                  )}
+                  <p className="text-xs hr-muted mt-1.5">{lv.reason}</p>
+                </div>
+                <div className="flex items-center gap-2 pt-2 border-t" style={{ borderColor: "var(--border-subtle)" }}>
+                  {canActStage1 || canActStage2 ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => decideLeaveRequest(lv.id, "Approved")}
+                        className="flex-1 btn-emerald py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {canActStage2
+                          ? isId
+                            ? "Finalisasi HR"
+                            : "HR Final Approve"
+                          : isId
+                          ? "Setujui"
+                          : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decideLeaveRequest(lv.id, "Rejected")}
+                        className="flex-1 py-2 rounded-lg text-xs font-bold badge-danger flex items-center justify-center gap-1"
+                      >
+                        <XCircle className="w-3.5 h-3.5" /> {isId ? "Tolak" : "Reject"}
+                      </button>
+                    </>
+                  ) : lv.status === "Pending" || lv.status === "Manager Approved" ? (
+                    <span className="text-[11px] hr-muted font-semibold">
+                      {lv.status === "Manager Approved"
+                        ? isId
+                          ? "Menunggu Finalisasi HR Admin (Tahap 2/2)"
+                          : "Awaiting HR Admin Final Sign-Off (Stage 2/2)"
+                        : isId
+                        ? "Menunggu persetujuan Manajer / HR"
+                        : "Awaiting Manager / HR approval"}
+                    </span>
+                  ) : (
+                    <a
+                      href={`https://wa.me/${lv.employeePhone}?text=${encodeURIComponent(
+                        `Halo ${lv.employeeName}, pengajuan ${lv.type} (${lv.startDate} s/d ${lv.endDate}) telah ${lv.status} oleh HRIS AetherHR.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-1.5 rounded-lg text-xs font-semibold hr-btn-secondary flex items-center justify-center gap-1.5"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                      {isId ? "Kirim Bukti WhatsApp" : "Send WhatsApp Receipt"}
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Overtime (SPL Kepmenaker 1.5x / 2x) -> Direct Payroll Auto-Sync */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <form onSubmit={handleSubmitOvertime} className="lg:col-span-5 hr-card rounded-2xl p-5 space-y-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-extrabold flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              {isId ? "Ajukan Lembur (SPL Kepmenaker)" : "Submit Overtime (SPL Statutory)"}
+            </h2>
+            <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">1.5x / 2.0x</span>
+          </div>
+          <p className="hr-muted">
+            {isId
+              ? "Upah lembur dihitung otomatis sesuai PP 35/2021 (1/173 × gaji tetap) dan langsung masuk ke Payroll saat disetujui."
+              : "Overtime pay is computed per statutory multiplier (1/173 × fixed wage) and auto-synced to Payroll upon approval."}
+          </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div>
+              <label className="block font-bold hr-muted mb-1">{isId ? "Tanggal" : "Date"}</label>
+              <input
+                type="date"
+                value={otDate}
+                onChange={(e) => setOtDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl hr-input"
+              />
+            </div>
+            <div>
+              <label className="block font-bold hr-muted mb-1">{isId ? "Durasi (Jam)" : "Hours (1-12)"}</label>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={otHours}
+                onChange={(e) => setOtHours(Number(e.target.value) || 1)}
+                className="w-full px-3 py-2 rounded-xl hr-input font-mono font-bold"
+              />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer font-semibold">
+            <input
+              type="checkbox"
+              checked={otHoliday}
+              onChange={(e) => setOtHoliday(e.target.checked)}
+              className="accent-indigo-600 w-4 h-4"
+            />
+            {isId ? "Hari Libur Nasional / Akhir Pekan (Tarif 2x–4x)" : "Weekend / Public Holiday Rate (2x–4x)"}
+          </label>
+          <input
+            required
+            value={otReason}
+            onChange={(e) => setOtReason(e.target.value)}
+            placeholder={isId ? "Keterangan tugas lembur (misal: Deployment produksi)..." : "Overtime justification (e.g. Production release)..."}
+            className="w-full px-3.5 py-2.5 rounded-xl hr-input"
+          />
+          <div className="p-3 rounded-xl hr-subtle flex items-center justify-between">
+            <span className="hr-muted">{otPreview.formulaLabel}</span>
+            <span className="font-mono font-extrabold text-emerald-600 dark:text-emerald-400">
+              {formatConverted(otPreview.totalPay, targetEmployee.currency, displayCurrency)}
+            </span>
+          </div>
+          <button type="submit" className="btn-quantum w-full py-2.5 rounded-xl font-bold">
+            {isId ? "Ajukan Surat Perintah Lembur (SPL)" : "Submit Overtime Request"}
+          </button>
+        </form>
+
+        <div className="lg:col-span-7 hr-card rounded-2xl p-5 space-y-3 overflow-x-auto">
+          <h2 className="text-base font-extrabold flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            {isId
+              ? `Daftar Lembur SPL & Sinkronisasi Payroll (${visibleOvertime.length})`
+              : `Overtime (SPL) Queue & Payroll Sync (${visibleOvertime.length})`}
+          </h2>
+          <table className="w-full text-left text-xs min-w-[540px]">
+            <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
+              <tr>
+                <th className="py-2 px-2">{isId ? "Karyawan & Tanggal" : "Employee & Date"}</th>
+                <th className="py-2 px-2">{isId ? "Durasi & Alasan" : "Hours & Reason"}</th>
+                <th className="py-2 px-2">{isId ? `Estimasi (${displayCurrency})` : `Pay (${displayCurrency})`}</th>
+                <th className="py-2 px-2">Status</th>
+                <th className="py-2 px-2 text-right">{isId ? "Aksi" : "Action"}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
+              {visibleOvertime.map((ot) => (
+                <tr key={ot.id}>
+                  <td className="py-2.5 px-2">
+                    <div className="font-bold">{ot.employeeName}</div>
+                    <div className="text-[10px] hr-muted font-mono">{ot.date}</div>
+                  </td>
+                  <td className="py-2.5 px-2 max-w-[200px]">
+                    <div className="font-semibold">
+                      {ot.hours}h · {ot.isHoliday ? (isId ? "Libur" : "Holiday") : isId ? "Kerja" : "Weekday"}
+                    </div>
+                    <div className="text-[10px] hr-muted truncate">{ot.reason}</div>
+                  </td>
+                  <td className="py-2.5 px-2 font-mono whitespace-nowrap">
+                    <div className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {formatConverted(ot.calculatedPay, ot.currency, displayCurrency)}
+                    </div>
+                    {ot.currency !== displayCurrency && (
+                      <div className="text-[10px] hr-muted">{formatCurrency(ot.calculatedPay, ot.currency)}</div>
+                    )}
+                  </td>
+                  <td className="py-2.5 px-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        ot.status === "Approved"
+                          ? "badge-success"
+                          : ot.status === "Rejected"
+                          ? "badge-danger"
+                          : "badge-warning"
+                      }`}
+                    >
+                      {tStatus(ot.status, locale)}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-right">
+                    {ot.status === "Pending" && canApproveLeave ? (
+                      <div className="inline-flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => decideOvertimeRequest(ot.id, "Approved")}
+                          className="btn-emerald px-2 py-1 rounded-lg text-[10px] font-bold"
+                        >
+                          {isId ? "Setujui" : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => decideOvertimeRequest(ot.id, "Rejected")}
+                          className="badge-danger px-2 py-1 rounded-lg text-[10px] font-bold"
+                        >
+                          {isId ? "Tolak" : "Reject"}
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] hr-muted font-semibold">
+                        {ot.syncedToPayroll ? (isId ? "Sync Payroll ✓" : "Synced ✓") : "—"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

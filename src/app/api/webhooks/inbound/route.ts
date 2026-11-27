@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signInviteToken } from "@/lib/token";
 import { ASSESSMENT_PRESETS } from "@/lib/psychometrics";
+import { checkRateLimit, getClientIp } from "@/lib/security";
 
 export async function GET() {
   return NextResponse.json({
@@ -25,6 +26,15 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request.headers);
+    const rate = checkRateLimit(`inbound:${ip}`, 30, 60_000);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { ok: false, error: "Inbound webhook rate limit exceeded. Please retry shortly." },
+        { status: 429 }
+      );
+    }
+
     const apiKey = request.headers.get("x-api-key");
     const expectedKey = process.env.INBOUND_WEBHOOK_API_KEY;
     if (expectedKey && apiKey !== expectedKey) {
@@ -41,21 +51,27 @@ export async function POST(request: NextRequest) {
       presetId?: string;
     };
 
+    const candidateName = String(body.candidateName || "Inbound Candidate").trim().slice(0, 120);
+    const candidateEmail = String(body.candidateEmail || "").trim().slice(0, 140);
+    const role = String(body.role || "Global Specialist").trim().slice(0, 120);
+    const department = String(body.department || "General").trim().slice(0, 80);
+
     const preset =
       ASSESSMENT_PRESETS.find((p) => p.id === body.presetId) || ASSESSMENT_PRESETS[0];
 
     const host = request.headers.get("host") || "hris-automation.vercel.app";
-    const proto = host.includes("localhost") ? "http" : "https";
+    const fwdProto = request.headers.get("x-forwarded-proto");
+    const proto = fwdProto || (host.includes("localhost") || host.startsWith("127.") ? "http" : "https");
     const origin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || `${proto}://${host}`;
 
-    const cleanPhone = (body.candidatePhone || "").replace(/[^\d]/g, "");
+    const cleanPhone = String(body.candidatePhone || "").replace(/[^\d]/g, "").slice(0, 20);
     const token = signInviteToken({
       id: `inb_${Date.now()}`,
-      candidateName: body.candidateName || "Inbound Candidate",
-      candidateEmail: body.candidateEmail || "",
+      candidateName,
+      candidateEmail,
       candidatePhone: cleanPhone,
-      role: body.role || "Global Specialist",
-      department: body.department || "General",
+      role,
+      department,
       companyName: "AetherHR Global Technologies",
       categories: preset.categories,
       presetId: preset.id,
@@ -69,9 +85,7 @@ export async function POST(request: NextRequest) {
     const inviteUrl = `${origin}/assess/${token}`;
     const whatsappLaunchUrl = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-          `Hello ${body.candidateName || "Candidate"}, your AetherHR Cognitive & Psychometric Assessment link for ${
-            body.role || "our open role"
-          } is ready: ${inviteUrl}`
+          `Hello ${candidateName}, your AetherHR Cognitive & Psychometric Assessment link for ${role} is ready: ${inviteUrl}`
         )}`
       : null;
 

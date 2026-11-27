@@ -39,6 +39,7 @@ export default function FinanceOpsPage() {
   const isId = locale === "id";
 
   const canApproveExpenses = hasPermission("expenses:approve");
+  const canFinalApproveExpenses = hasPermission("payroll:run") || activeRole === "Super Admin";
   const canManageAssets = hasPermission("assets:manage");
   const isEss = activeRole === "Employee";
 
@@ -308,21 +309,36 @@ export default function FinanceOpsPage() {
                           ? "badge-success"
                           : ex.status === "Rejected"
                           ? "badge-danger"
+                          : ex.status === "Manager Approved"
+                          ? "badge-info"
                           : "badge-warning"
                       }`}
                     >
                       {tStatus(ex.status, locale)}
                     </span>
+                    {ex.stage1Approver && (
+                      <div className="text-[9px] hr-muted mt-0.5 truncate max-w-[160px]">
+                        1: {ex.stage1Approver}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 px-3 text-right">
-                    {ex.status === "Pending" && canApproveExpenses ? (
+                    {(ex.status === "Pending" && canApproveExpenses) ||
+                    (ex.status === "Manager Approved" && canFinalApproveExpenses) ? (
                       <div className="inline-flex gap-1.5">
                         <button
                           type="button"
                           onClick={() => decideExpenseClaim(ex.id, "Approved")}
                           className="btn-emerald px-2.5 py-1.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> {isId ? "Setujui" : "Approve"}
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {ex.status === "Manager Approved"
+                            ? isId
+                              ? "Finalisasi Finance"
+                              : "Finance Finalize"
+                            : isId
+                            ? "Setujui"
+                            : "Approve"}
                         </button>
                         <button
                           type="button"
@@ -332,9 +348,15 @@ export default function FinanceOpsPage() {
                           <XCircle className="w-3.5 h-3.5" /> {isId ? "Tolak" : "Reject"}
                         </button>
                       </div>
-                    ) : ex.status === "Pending" ? (
+                    ) : ex.status === "Pending" || ex.status === "Manager Approved" ? (
                       <span className="text-[11px] hr-muted font-semibold">
-                        {isId ? "Menunggu Verifikasi" : "Pending Review"}
+                        {ex.status === "Manager Approved"
+                          ? isId
+                            ? "Menunggu Finalisasi Finance (2/2)"
+                            : "Awaiting Finance Final Sign-Off"
+                          : isId
+                          ? "Menunggu Verifikasi"
+                          : "Pending Review"}
                       </span>
                     ) : (
                       <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">

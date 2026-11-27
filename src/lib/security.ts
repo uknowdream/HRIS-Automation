@@ -181,6 +181,16 @@ export function isSsrfRestrictedUrl(rawUrl: string): { blocked: boolean; reason?
   return { blocked: false };
 }
 
+export function isSafeExternalUrl(rawUrl: string): { safe: boolean; reason?: string } {
+  const res = isSsrfRestrictedUrl(rawUrl);
+  return { safe: !res.blocked, reason: res.reason };
+}
+
+export function getClientIp(headers: Headers): string {
+  const fwd = headers.get("x-forwarded-for") || headers.get("x-real-ip") || "127.0.0.1";
+  return fwd.split(",")[0].trim() || "127.0.0.1";
+}
+
 // ==========================================
 // 6. DEMO & REGISTERED ENTERPRISE ACCOUNTS
 // ==========================================

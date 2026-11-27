@@ -99,7 +99,8 @@ export default function LoginPage() {
           ? `${data.user.name} berhasil masuk sebagai ${tRole(data.user.role, "id")}.`
           : `${data.user.name} signed in as ${data.user.role}.`,
         category: "security",
-        href: "/audit-logs",
+        href: data.user.role === "Employee" ? "/profile" : "/audit-logs",
+        targetRoles: [data.user.role],
       });
       pushToast({
         title: isId ? `Selamat Datang, ${data.user.name}` : `Welcome back, ${data.user.name}`,
@@ -481,12 +482,20 @@ export default function LoginPage() {
             </div>
           )}
 
-          <p className="text-center text-xs text-slate-500">
-            {isId ? "Belum punya akun atau workspace perusahaan?" : "New to AetherHR?"}{" "}
-            <Link href="/signup" className="font-bold text-indigo-600 hover:underline">
-              {isId ? "Daftar Workspace Baru (Sign Up)" : "Create Enterprise Workspace"}
-            </Link>
-          </p>
+          <div className="space-y-1.5 text-center text-xs text-slate-500">
+            <p>
+              {isId ? "Belum punya akun atau workspace perusahaan?" : "New to AetherHR?"}{" "}
+              <Link href="/signup" className="font-bold text-indigo-600 hover:underline">
+                {isId ? "Daftar Workspace Baru (Sign Up)" : "Create Enterprise Workspace"}
+              </Link>
+            </p>
+            <p>
+              {isId ? "Melamar kerja di perusahaan kami?" : "Looking for open roles?"}{" "}
+              <Link href="/careers" className="font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
+                {isId ? "Buka Portal Karir Publik →" : "Explore Public Career Portal →"}
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>

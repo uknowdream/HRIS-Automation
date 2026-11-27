@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  DEMO_USERS,
   SESSION_COOKIE_NAME,
   signSessionToken,
   verifySessionToken,
@@ -32,7 +33,36 @@ export async function PATCH(request: NextRequest) {
     };
 
     if (!existing) {
-      return NextResponse.json({ ok: false, authenticated: false }, { status: 401 });
+      const matchedDemo = patch.email
+        ? DEMO_USERS.find((u) => u.email.toLowerCase() === patch.email?.toLowerCase())
+        : patch.defaultCurrency
+        ? DEMO_USERS[1]
+        : undefined;
+      if (!matchedDemo) {
+        return NextResponse.json({ ok: false, authenticated: false }, { status: 401 });
+      }
+      const now = Date.now();
+      const bootstrapped = {
+        id: matchedDemo.id,
+        name: matchedDemo.name,
+        email: matchedDemo.email,
+        role: patch.role || matchedDemo.role,
+        companyName: patch.companyName || matchedDemo.companyName,
+        defaultCurrency: patch.defaultCurrency || matchedDemo.defaultCurrency,
+        avatarInitials: matchedDemo.avatarInitials,
+        mfaVerified: true,
+        issuedAt: now,
+        expiresAt: now + 24 * 3600 * 1000,
+      };
+      const res = NextResponse.json({ ok: true, authenticated: true, user: bootstrapped });
+      res.cookies.set(SESSION_COOKIE_NAME, signSessionToken(bootstrapped), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 24 * 3600,
+      });
+      return res;
     }
 
     const updated = {

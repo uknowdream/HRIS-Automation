@@ -18,6 +18,8 @@ const STATUS_MAP: Record<string, { id: string; en: string }> = {
   Onboarding: { id: "Onboarding", en: "Onboarding" },
   Probation: { id: "Masa Percobaan", en: "Probation" },
   Pending: { id: "Menunggu", en: "Pending" },
+  "Manager Approved": { id: "Disetujui Manajer (Tahap 1/2)", en: "Manager Approved (Stage 1/2)" },
+  "Awaiting Checker": { id: "Menunggu Verifikasi Checker", en: "Awaiting Checker Sign-Off" },
   Approved: { id: "Disetujui", en: "Approved" },
   Rejected: { id: "Ditolak", en: "Rejected" },
   "Paid in Payroll": { id: "Dibayar di Payroll", en: "Paid in Payroll" },
@@ -69,6 +71,7 @@ export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] 
       read: false,
       createdAt: "2026-11-24T08:15:00Z",
       href: "/attendance",
+      targetRoles: ["Super Admin", "HR Admin", "Department Manager"],
     },
     {
       id: "ntf-2",
@@ -80,6 +83,7 @@ export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] 
       read: false,
       createdAt: "2026-11-24T07:50:00Z",
       href: "/finance-ops",
+      targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll", "Department Manager"],
     },
     {
       id: "ntf-3",
@@ -91,6 +95,7 @@ export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] 
       read: false,
       createdAt: "2026-11-24T07:10:00Z",
       href: "/documents",
+      targetRoles: ["Super Admin", "HR Admin"],
     },
     {
       id: "ntf-4",
@@ -102,6 +107,7 @@ export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] 
       read: false,
       createdAt: "2026-11-23T15:42:00Z",
       href: "/assessments",
+      targetRoles: ["Super Admin", "HR Admin", "Department Manager"],
     },
     {
       id: "ntf-5",
@@ -113,6 +119,31 @@ export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] 
       read: false,
       createdAt: "2026-11-24T09:00:00Z",
       href: "/audit-logs",
+      targetRoles: ["Super Admin", "HR Admin", "Finance & Payroll"],
+    },
+    {
+      id: "ntf-ess-1",
+      title: isId ? "Slip Gaji Periode Terbaru Tersedia" : "Latest Digital Payslip Ready",
+      message: isId
+        ? "Slip gaji terverifikasi PPh 21 TER & BPJS Anda sudah tersedia untuk diunduh (PDF)."
+        : "Your verified digital payslip with statutory tax breakdown is ready to download.",
+      category: "payroll",
+      read: false,
+      createdAt: "2026-11-24T08:30:00Z",
+      href: "/payroll",
+      targetRoles: ["Employee", "Department Manager", "Finance & Payroll", "HR Admin", "Super Admin"],
+    },
+    {
+      id: "ntf-ess-2",
+      title: isId ? "Pengajuan Perubahan Data ESS Aktif" : "ESS Self-Service Profile Active",
+      message: isId
+        ? "Perbarui rekening bank, status PTKP, atau kontak darurat Anda melalui halaman Profil ESS."
+        : "Update your payroll bank account, PTKP tax status, or emergency contact via My ESS Profile.",
+      category: "security",
+      read: false,
+      createdAt: "2026-11-24T08:05:00Z",
+      href: "/profile",
+      targetRoles: ["Employee"],
     },
   ];
 }
@@ -140,6 +171,8 @@ export const translations = {
       performance: "OKR & Talenta 9-Box",
       automation: "Otomatisasi & API",
       auditLogs: "Audit Log & RBAC",
+      profile: "Profil & ESS Saya",
+      careers: "Portal Karir",
       mobile: "Aplikasi Mobile",
       settings: "Pengaturan",
     },
@@ -225,6 +258,8 @@ export const translations = {
       performance: "OKRs & 9-Box",
       automation: "Automation & API",
       auditLogs: "Audit Logs & RBAC",
+      profile: "My ESS Profile",
+      careers: "Career Portal",
       mobile: "Mobile App PWA",
       settings: "Settings",
     },
