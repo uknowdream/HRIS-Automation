@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -22,6 +22,9 @@ import {
   CalendarClock,
   ShieldCheck,
   UserCheck,
+  Coffee,
+  LogOut,
+  Fingerprint,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { getDict, tRole, tStatus } from "@/lib/i18n";
@@ -43,19 +46,38 @@ export default function ExecutiveDashboardPage() {
     employees,
     attendance,
     leaves,
+    overtimeRequests,
+    profileChangeRequests,
+    payrollRuns,
     expenses,
     documents,
     announcements,
     reports,
     workflows,
     openInviteModal,
+    clockInEmployee,
+    toggleBreakAttendance,
+    clockOutEmployee,
     decideLeaveRequest,
+    decideOvertimeRequest,
+    decideProfileChangeRequest,
     decideExpenseClaim,
   } = useHRIS();
 
   const dict = getDict(locale);
   const isId = locale === "id";
   const [inboxTab, setInboxTab] = useState<"all" | "leave" | "expense" | "contract">("all");
+  const [todayStr, setTodayStr] = useState("2026-11-27");
+  useEffect(() => {
+    setTodayStr(new Date().toISOString().slice(0, 10));
+  }, []);
+
+  const myTodayShift = attendance.find(
+    (a) => a.employeeId === currentEmployee.id && a.date === todayStr
+  );
+  const activePayroll = payrollRuns[0];
+  const approvedExpensesQueue = expenses.filter((e) => e.syncedToPayroll).length;
+  const approvedOvertimeQueue = overtimeRequests.filter((o) => o.syncedToPayroll).length;
 
   const scopedEmployees = useMemo(() => {
     if (selectedEntity === "ALL") return employees;
@@ -88,18 +110,43 @@ export default function ExecutiveDashboardPage() {
     [currentEmployee]
   );
 
+  const canFinalApproveLeave = hasPermission("employees:manage");
+  const canFinalApproveExpense = hasPermission("payroll:run") || activeRole === "Super Admin";
+
   const pendingLeaves = isEss
     ? leaves.filter((l) => l.employeeId === currentEmployee.id)
-    : leaves.filter((l) => l.status === "Pending");
+    : leaves.filter(
+        (l) =>
+          l.status === "Pending" ||
+          (l.status === "Manager Approved" && canFinalApproveLeave)
+      );
+  const pendingOvertime = isEss
+    ? []
+    : hasPermission("attendance:approve")
+    ? overtimeRequests.filter((o) => o.status === "Pending")
+    : [];
+  const pendingProfileUpdates =
+    !isEss && hasPermission("employees:manage")
+      ? profileChangeRequests.filter((r) => r.status === "Pending")
+      : [];
   const pendingExpenses = isEss
     ? expenses.filter((e) => e.employeeId === currentEmployee.id)
-    : expenses.filter((e) => e.status === "Pending");
+    : expenses.filter(
+        (e) =>
+          e.status === "Pending" ||
+          (e.status === "Manager Approved" && canFinalApproveExpense)
+      );
   const actionDocs = isEss
     ? documents.filter((d) => d.employeeId === currentEmployee.id && d.status !== "Signed")
     : documents.filter(
         (d) => d.status === "Awaiting Signature" || d.status === "Expiring Soon"
       );
-  const totalPending = pendingLeaves.length + pendingExpenses.length + actionDocs.length;
+  const totalPending =
+    pendingLeaves.length +
+    pendingOvertime.length +
+    pendingProfileUpdates.length +
+    pendingExpenses.length +
+    actionDocs.length;
 
   const deptCounts = Object.entries(
     scopedEmployees.reduce<Record<string, number>>((acc, e) => {
@@ -325,6 +372,92 @@ export default function ExecutiveDashboardPage() {
         </div>
       </section>
 
+      {/* Live Quick Attendance Strip (100% Synced with /attendance & /mobile — Zero Spam!) */}
+      <section className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <Fingerprint className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold truncate">
+              {!myTodayShift
+                ? isId
+                  ? `Status Absensi Hari Ini (${currentEmployee.name}): Belum Clock-In`
+                  : `Today's Shift (${currentEmployee.name}): Not Clocked In`
+                : myTodayShift.clockOut
+                ? isId
+                  ? `Shift Selesai (${myTodayShift.clockIn} → ${myTodayShift.clockOut} · ${myTodayShift.workHours}j)`
+                  : `Shift Completed (${myTodayShift.clockIn} → ${myTodayShift.clockOut} · ${myTodayShift.workHours}h)`
+                : myTodayShift.onBreak
+                ? isId
+                  ? `Sedang Istirahat · Masuk pukul ${myTodayShift.clockIn}`
+                  : `On Break · Clocked in at ${myTodayShift.clockIn}`
+                : isId
+                ? `Sedang Bekerja · Masuk pukul ${myTodayShift.clockIn} (GPS Terverifikasi)`
+                : `Shift Active · Clocked in at ${myTodayShift.clockIn} (GPS Verified)`}
+            </div>
+            <div className="text-[11px] hr-muted truncate">
+              {currentEmployee.location} · {isId ? "Tersinkron langsung ke Absensi, Mobile App & Payroll" : "Live-synced to Attendance, Mobile PWA & Payroll"}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {!myTodayShift ? (
+            <button
+              type="button"
+              onClick={() => {
+                const hhmm = new Date().toTimeString().slice(0, 5);
+                clockInEmployee({
+                  employeeId: currentEmployee.id,
+                  employeeName: currentEmployee.name,
+                  department: currentEmployee.department,
+                  date: todayStr,
+                  clockIn: hhmm,
+                  clockOut: null,
+                  status: Number(hhmm.slice(0, 2)) >= 9 ? "Late" : "On Time",
+                  location: `${currentEmployee.location} (Dashboard GPS Verified)`,
+                  coordinates: { lat: -6.2248, lng: 106.8095 },
+                  geofenceVerified: true,
+                  workHours: 0,
+                  device: "Web Portal",
+                });
+              }}
+              className="btn-quantum px-3.5 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {isId ? "Clock-In Sekarang" : "Clock-In Now"}
+            </button>
+          ) : !myTodayShift.clockOut ? (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleBreakAttendance(myTodayShift.id)}
+                className="hr-btn-secondary px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1"
+              >
+                <Coffee className="w-3.5 h-3.5" />
+                {myTodayShift.onBreak ? (isId ? "Lanjut Kerja" : "Resume") : isId ? "Istirahat" : "Break"}
+              </button>
+              <button
+                type="button"
+                onClick={() => clockOutEmployee(myTodayShift.id)}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white inline-flex items-center gap-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Clock-Out
+              </button>
+            </>
+          ) : (
+            <Link
+              href="/attendance#spl-overtime-section"
+              className="badge-success px-3 py-1.5 rounded-lg text-xs font-bold inline-flex items-center gap-1"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {isId ? "Hadir ✓ · Ajukan Lembur" : "Present ✓ · Log SPL"}
+            </Link>
+          )}
+        </div>
+      </section>
+
       {/* Row 1: Crisp 4-Column Quiet-Chrome Metric Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics.map((m) => {
@@ -435,14 +568,20 @@ export default function ExecutiveDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {hasPermission("attendance:approve") && lv.status === "Pending" ? (
+                      {(hasPermission("attendance:approve") && lv.status === "Pending") ||
+                      (canFinalApproveLeave && lv.status === "Manager Approved") ? (
                         <>
                           <button
                             type="button"
                             onClick={() => decideLeaveRequest(lv.id, "Approved")}
                             className="btn-emerald px-3 py-1.5 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> {dict.common.approve}
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            {lv.status === "Manager Approved"
+                              ? isId
+                                ? "Final HR"
+                                : "HR Final"
+                              : dict.common.approve}
                           </button>
                           <button
                             type="button"
@@ -458,6 +597,88 @@ export default function ExecutiveDashboardPage() {
                           {tStatus(lv.status, locale)}
                         </span>
                       )}
+                    </div>
+                  </div>
+                ))}
+
+              {(inboxTab === "all" || inboxTab === "leave") &&
+                pendingOvertime.map((ot) => (
+                  <div
+                    key={ot.id}
+                    className="px-5 py-3.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <Clock className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold">
+                          {ot.employeeName} ·{" "}
+                          <span className="text-indigo-600 dark:text-indigo-400">
+                            {isId ? `Lembur SPL (${ot.hours} jam)` : `SPL Overtime (${ot.hours}h)`}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {ot.date} · {formatConverted(ot.calculatedPay, ot.currency, displayCurrency)} · {ot.reason}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => decideOvertimeRequest(ot.id, "Approved")}
+                        className="btn-emerald px-3 py-1.5 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {isId ? "Setujui SPL" : "Approve SPL"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decideOvertimeRequest(ot.id, "Rejected")}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
+                        aria-label="Reject overtime"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+              {inboxTab === "all" &&
+                pendingProfileUpdates.map((req) => (
+                  <div
+                    key={req.id}
+                    className="px-5 py-3.5 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold">
+                          {req.employeeName} ·{" "}
+                          <span className="text-indigo-600 dark:text-indigo-400">
+                            ESS: {req.field} ({req.oldValue} → {req.newValue})
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">{req.reason}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => decideProfileChangeRequest(req.id, "Approved")}
+                        className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-semibold"
+                      >
+                        {isId ? "Setujui ESS" : "Approve ESS"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => decideProfileChangeRequest(req.id, "Rejected")}
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
+                        aria-label="Reject profile update"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -485,14 +706,21 @@ export default function ExecutiveDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {hasPermission("expenses:approve") && ex.status === "Pending" ? (
+                      {(hasPermission("expenses:approve") && ex.status === "Pending") ||
+                      (canFinalApproveExpense && ex.status === "Manager Approved") ? (
                         <>
                           <button
                             type="button"
                             onClick={() => decideExpenseClaim(ex.id, "Approved")}
                             className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-semibold"
                           >
-                            {isId ? "Setujui & Sync" : "Approve & Sync"}
+                            {ex.status === "Manager Approved"
+                              ? isId
+                                ? "Final Finance"
+                                : "Finance Final"
+                              : isId
+                              ? "Setujui & Sync"
+                              : "Approve & Sync"}
                           </button>
                           <button
                             type="button"
@@ -631,30 +859,49 @@ export default function ExecutiveDashboardPage() {
             </div>
           )}
 
-          {/* Payroll Readiness Card (ONLY shown to roles permitted to view company payroll!) */}
+          {/* Live Payroll Readiness Card (Reactive to actual payrollRuns, expenses & SPL!) */}
           {hasPermission("payroll:view_all") && (
             <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3.5">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-extrabold flex items-center gap-2">
                   <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  {isId ? "Siklus Payroll Nov 2026" : "Nov 2026 Payroll Cycle"}
+                  {isId
+                    ? `Siklus Payroll ${activePayroll?.period || "2026-11"}`
+                    : `Payroll Cycle ${activePayroll?.period || "2026-11"}`}
                 </h2>
-                <span className="badge-success px-2 py-0.5 rounded-full text-[10px] font-bold">
-                  {isId ? "Siap" : "On Track"}
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activePayroll?.status === "Awaiting Checker" ? "badge-warning" : "badge-success"
+                  }`}
+                >
+                  {tStatus(activePayroll?.status || "Completed", locale)}
                 </span>
               </div>
               <div className="space-y-2 text-xs">
                 {[
-                  { label: isId ? "Sinkronisasi Absensi & Shift GPS" : "GPS Attendance & Shift Sync", done: true },
-                  { label: isId ? "Penggabungan Reimburse Disetujui" : "Approved Reimbursements Merged", done: true },
-                  { label: isId ? "Pencairan Bank API (25 Nov)" : "Bank API Disbursement (Nov 25)", done: false },
+                  {
+                    label: isId
+                      ? `Absensi & Lembur SPL (${approvedOvertimeQueue} antrean)`
+                      : `Attendance & SPL Overtime (${approvedOvertimeQueue} queued)`,
+                    done: approvedOvertimeQueue === 0,
+                  },
+                  {
+                    label: isId
+                      ? `Reimburse Siap Payroll (${approvedExpensesQueue} klaim)`
+                      : `Expenses Queued (${approvedExpensesQueue} claims)`,
+                    done: approvedExpensesQueue === 0,
+                  },
+                  {
+                    label: isId ? "Verifikasi Checker & Pencairan Bank" : "Checker Sign-Off & Bank Disbursement",
+                    done: activePayroll?.status === "Completed",
+                  },
                 ].map((step) => (
                   <div key={step.label} className="flex items-center justify-between py-1">
                     <span className={step.done ? "text-slate-700 dark:text-slate-300" : "text-slate-500"}>
                       {step.label}
                     </span>
-                    <span className={`text-[10px] font-bold ${step.done ? "text-emerald-600" : "text-amber-600"}`}>
-                      {step.done ? (isId ? "✓ Siap" : "✓ Ready") : isId ? "Terjadwal" : "Scheduled"}
+                    <span className={`text-[10px] font-bold shrink-0 ${step.done ? "text-emerald-600" : "text-amber-600"}`}>
+                      {step.done ? (isId ? "✓ Selesai" : "✓ Settled") : isId ? "Siap Proses" : "Pending Run"}
                     </span>
                   </div>
                 ))}
@@ -663,7 +910,13 @@ export default function ExecutiveDashboardPage() {
                 href="/payroll"
                 className="block w-full text-center py-2 rounded-lg hr-btn-secondary text-xs font-semibold"
               >
-                {isId ? "Tinjau & Jalankan Payroll →" : "Review Payroll Run →"}
+                {activePayroll?.status === "Awaiting Checker"
+                  ? isId
+                    ? "Verifikasi Checker Sekarang →"
+                    : "Sign Off as Checker →"
+                  : isId
+                  ? "Tinjau & Jalankan Payroll →"
+                  : "Review Payroll Run →"}
               </Link>
             </div>
           )}

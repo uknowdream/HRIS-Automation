@@ -54,69 +54,94 @@ export default function LearningAndOnboardingPage() {
           <CheckSquare className="w-4 h-4 text-emerald-600" />
           {isId ? "Checklist Onboarding & Provisioning Aktif" : "Active Employee Onboarding Pipelines"}
         </h2>
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {(visibleChecklists.length > 0 ? visibleChecklists : checklists.slice(0, 1)).map((chk) => {
-            const doneCount = chk.tasks.filter((t) => t.done).length;
-            const pct = Math.round((doneCount / Math.max(1, chk.tasks.length)) * 100);
-            return (
-              <div key={chk.id} className="hr-card rounded-2xl p-5 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/12 text-indigo-600 dark:text-indigo-300">
-                      {chk.type} · Start {chk.startDate}
-                    </span>
-                    <h3 className="text-base font-black mt-1">{chk.employeeName}</h3>
-                    <div className="text-xs hr-muted">
-                      {chk.role} · Buddy: <span className="font-semibold">{chk.buddyName}</span>
+        {visibleChecklists.length === 0 ? (
+          <div className="hr-card rounded-2xl p-6 text-center space-y-2 text-xs">
+            <div className="w-10 h-10 rounded-xl badge-success flex items-center justify-center mx-auto">
+              <CheckSquare className="w-5 h-5" />
+            </div>
+            <div className="text-sm font-extrabold">
+              {isId
+                ? `Seluruh Tugas Onboarding ${currentEmployee.name} Telah Selesai ✓`
+                : `All Onboarding Tasks for ${currentEmployee.name} Completed ✓`}
+            </div>
+            <p className="hr-muted">
+              {isId
+                ? "Anda dapat melanjutkan sertifikasi wajib pada katalog LMS di bawah ini."
+                : "You can continue mandatory compliance certifications in the LMS catalog below."}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+            {visibleChecklists.map((chk) => {
+              const doneCount = chk.tasks.filter((t) => t.done).length;
+              const pct = Math.round((doneCount / Math.max(1, chk.tasks.length)) * 100);
+              return (
+                <div key={chk.id} className="hr-card rounded-2xl p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/12 text-indigo-600 dark:text-indigo-300">
+                        {chk.type} · {isId ? "Mulai" : "Start"} {chk.startDate}
+                      </span>
+                      <h3 className="text-base font-black mt-1">{chk.employeeName}</h3>
+                      <div className="text-xs hr-muted">
+                        {chk.role} · Buddy: <span className="font-semibold">{chk.buddyName}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xl font-black text-indigo-600 dark:text-cyan-400">{pct}%</div>
+                      <div className="text-[10px] hr-muted font-mono">
+                        {doneCount}/{chk.tasks.length} {isId ? "tugas" : "tasks"}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-xl font-black text-indigo-600 dark:text-cyan-400">{pct}%</div>
-                    <div className="text-[10px] hr-muted font-mono">
-                      {doneCount}/{chk.tasks.length} tasks
+
+                  {pct === 100 && (
+                    <div className="px-3 py-2 rounded-xl badge-success text-[11px] font-bold">
+                      ✓ {isId ? "Onboarding 100% Selesai — Status Karyawan Aktif!" : "100% Onboarding Complete — Employee Active!"}
                     </div>
+                  )}
+
+                  <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    {chk.tasks.map((task) => (
+                      <button
+                        type="button"
+                        key={task.id}
+                        onClick={() => toggleChecklistTask(chk.id, task.id)}
+                        className="w-full text-left p-2.5 rounded-xl hr-subtle hover:border-indigo-400 flex items-center justify-between gap-2.5 text-xs transition"
+                      >
+                        <span className="flex items-center gap-2.5 min-w-0">
+                          {task.done ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Square className="w-4 h-4 hr-muted shrink-0" />
+                          )}
+                          <span className={task.done ? "line-through hr-muted" : "font-medium"}>
+                            {task.title}
+                          </span>
+                        </span>
+                        <span className="shrink-0 flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
+                            {task.phase}
+                          </span>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">
+                            {task.owner}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 </div>
-
-                <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  {chk.tasks.map((task) => (
-                    <button
-                      key={task.id}
-                      onClick={() => toggleChecklistTask(chk.id, task.id)}
-                      className="w-full text-left p-2.5 rounded-xl hr-subtle hover:border-indigo-400 flex items-center justify-between gap-2.5 text-xs transition"
-                    >
-                      <span className="flex items-center gap-2.5 min-w-0">
-                        {task.done ? (
-                          <CheckSquare className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : (
-                          <Square className="w-4 h-4 hr-muted shrink-0" />
-                        )}
-                        <span className={task.done ? "line-through hr-muted" : "font-medium"}>
-                          {task.title}
-                        </span>
-                      </span>
-                      <span className="shrink-0 flex items-center gap-1.5">
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-300">
-                          {task.phase}
-                        </span>
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">
-                          {task.owner}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* LMS Courses & Certificates */}
@@ -135,16 +160,18 @@ export default function LearningAndOnboardingPage() {
                   </span>
                   {course.mandatory && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/12 text-rose-600 dark:text-rose-300">
-                      Mandatory Compliance
+                      {isId ? "Wajib Kepatuhan" : "Mandatory Compliance"}
                     </span>
                   )}
                 </div>
                 <h3 className="text-sm font-black leading-snug">{course.title}</h3>
                 <div className="flex items-center gap-4 text-xs hr-muted">
                   <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" /> {course.durationHours}h</span>
-                  <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {course.enrolledCount} enrolled</span>
+                  <span className="flex items-center gap-1">
+                    <Users className="w-3.5 h-3.5" /> {course.enrolledCount} {isId ? "peserta" : "enrolled"}
+                  </span>
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                    {course.completionRate}% org rate
+                    {course.completionRate}% {isId ? "selesai" : "org rate"}
                   </span>
                 </div>
               </div>
@@ -153,6 +180,7 @@ export default function LearningAndOnboardingPage() {
                 <span className="text-[11px] font-mono hr-muted">{course.certificateCode}</span>
                 {course.completedByUser ? (
                   <button
+                    type="button"
                     onClick={() => setCertCourse(course)}
                     className="btn-emerald px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
                   >
@@ -160,7 +188,11 @@ export default function LearningAndOnboardingPage() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => completeCourse(course.id)}
+                    type="button"
+                    onClick={() => {
+                      completeCourse(course.id);
+                      setCertCourse({ ...course, completedByUser: true });
+                    }}
                     className="btn-quantum px-3.5 py-2 rounded-xl text-xs font-bold"
                   >
                     {isId ? "Selesaikan & Terbitkan Sertifikat" : "Complete & Issue Certificate"}

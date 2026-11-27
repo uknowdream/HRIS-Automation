@@ -24,6 +24,8 @@ export default function SettingsPage() {
 
   const [form, setForm] = useState<IntegrationSettings>(settings);
   const [health, setHealth] = useState<Record<string, unknown> | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
 
   useEffect(() => {
     setForm(settings);
@@ -39,6 +41,8 @@ export default function SettingsPage() {
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     updateSettings(form);
+    setJustSaved(true);
+    setTimeout(() => setJustSaved(false), 2500);
   };
 
   return (
@@ -62,10 +66,10 @@ export default function SettingsPage() {
           </div>
           <button
             type="button"
-            onClick={resetDemoData}
+            onClick={() => setConfirmResetOpen(true)}
             className="px-3.5 py-2 rounded-xl text-xs font-bold badge-danger flex items-center gap-1.5 self-start sm:self-auto"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Reset Demo Dataset
+            <RefreshCw className="w-3.5 h-3.5" /> {isId ? "Reset Data Demo" : "Reset Demo Dataset"}
           </button>
         </div>
 
@@ -324,10 +328,18 @@ export default function SettingsPage() {
           <div className="flex justify-end">
             <button
               type="submit"
-              className="btn-quantum px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2"
+              className={`px-6 py-3 rounded-xl text-xs font-bold flex items-center gap-2 transition ${
+                justSaved ? "btn-emerald" : "btn-quantum"
+              }`}
             >
-              <Save className="w-4 h-4" />
-              {isId ? "Simpan Seluruh Konfigurasi" : "Save Enterprise Configuration"}
+              {justSaved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              {justSaved
+                ? isId
+                  ? "Konfigurasi Tersimpan ✓"
+                  : "Configuration Saved ✓"
+                : isId
+                ? "Simpan Seluruh Konfigurasi"
+                : "Save Enterprise Configuration"}
             </button>
           </div>
         </form>
@@ -391,6 +403,47 @@ export default function SettingsPage() {
             <pre className="code-dark p-3 rounded-xl text-[11px] font-mono overflow-x-auto">
               {JSON.stringify(health.capabilities, null, 2)}
             </pre>
+          </div>
+        )}
+
+        {/* Destructive Reset Confirmation Modal */}
+        {confirmResetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/65 backdrop-blur-sm"
+            onClick={() => setConfirmResetOpen(false)}
+          >
+            <div
+              className="w-full max-w-md hr-card rounded-2xl p-6 space-y-4 border-l-4 border-l-rose-600"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-extrabold text-rose-600 dark:text-rose-400">
+                {isId ? "Konfirmasi Reset Seluruh Dataset Demo?" : "Confirm Full Workspace Reset?"}
+              </h3>
+              <p className="text-xs hr-muted leading-relaxed">
+                {isId
+                  ? "Semua perubahan karyawan, absensi, cuti, payroll, kontrak, dan pengaturan lokal akan dikembalikan ke data awal v8.1."
+                  : "All local modifications across employees, attendance, leaves, payroll, contracts, and settings will revert to pristine v8.1 seed data."}
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetOpen(false)}
+                  className="hr-btn-secondary px-4 py-2 rounded-xl text-xs font-bold"
+                >
+                  {isId ? "Batal" : "Cancel"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetDemoData();
+                    setConfirmResetOpen(false);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white"
+                >
+                  {isId ? "Ya, Reset Workspace" : "Yes, Reset Workspace"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

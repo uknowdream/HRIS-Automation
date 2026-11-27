@@ -46,6 +46,7 @@ export default function AuditLogsAndRbacPage() {
   const [moduleFilter, setModuleFilter] = useState<AuditModule | "ALL">("ALL");
   const [severityFilter, setSeverityFilter] = useState<AuditSeverity | "ALL">("ALL");
   const [verifiedStamp, setVerifiedStamp] = useState<string | null>(null);
+  const [verifiedCount, setVerifiedCount] = useState<number>(-1);
 
   const allowedModules = useMemo(() => getAllowedAuditModules(activeRole), [activeRole]);
   const canEditRbac = hasPermission("rbac:manage");
@@ -76,14 +77,16 @@ export default function AuditLogsAndRbacPage() {
   ).length;
 
   const verifyLedgerIntegrity = () => {
+    if (verifiedCount === auditLogs.length && verifiedStamp) return;
     // Verify hash computation on every entry against its stored prevHash
     let validCount = 0;
     for (const item of auditLogs) {
       const expected = computeAuditChainHash(item.prevHash, item);
       if (expected === item.hash) validCount += 1;
     }
-    const stamp = `${validCount}/${auditLogs.length} blocks verified (${new Date().toTimeString().slice(0, 8)})`;
+    const stamp = `${validCount}/${auditLogs.length} ${isId ? "blok valid" : "blocks verified"} (${new Date().toTimeString().slice(0, 8)})`;
     setVerifiedStamp(stamp);
+    setVerifiedCount(auditLogs.length);
     pushToast({
       title: isId ? "Integritas Hash SHA-256 Terverifikasi!" : "SHA-256 Audit Chain Verified!",
       description: `${stamp} — 0 tampered records.`,
@@ -153,8 +156,8 @@ export default function AuditLogsAndRbacPage() {
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full badge-info text-[11px] font-bold mb-2">
               <Lock className="w-3 h-3" />
               {isId
-                ? `Scope Akses Aktif: ${activeRole} (${allowedModules.length}/10 Modul Audit Diizinkan)`
-                : `Active Audit Scope: ${activeRole} (${allowedModules.length}/10 Audit Modules Permitted)`}
+                ? `Scope Akses Aktif: ${tRole(activeRole, locale)} (${allowedModules.length}/10 Modul Audit Diizinkan)`
+                : `Active Audit Scope: ${tRole(activeRole, locale)} (${allowedModules.length}/10 Audit Modules Permitted)`}
             </div>
             <h1 className="text-2xl font-extrabold tracking-tight flex items-center gap-2.5">
               <ShieldCheck className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
@@ -245,7 +248,8 @@ export default function AuditLogsAndRbacPage() {
             <button
               type="button"
               onClick={verifyLedgerIntegrity}
-              className="mt-2 w-full py-2 px-3 rounded-xl hr-btn-secondary text-xs font-bold flex items-center justify-center gap-1.5"
+              disabled={verifiedCount === auditLogs.length && Boolean(verifiedStamp)}
+              className="mt-2 w-full py-2 px-3 rounded-xl hr-btn-secondary text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-65 disabled:cursor-not-allowed"
             >
               <Fingerprint className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               {verifiedStamp || (isId ? "Verifikasi Integritas Rantai" : "Verify Hash Integrity")}
@@ -281,7 +285,7 @@ export default function AuditLogsAndRbacPage() {
                   <option value="ALL">{isId ? "Semua Role" : "All Roles"}</option>
                   {ALL_ROLES.map((r) => (
                     <option key={r} value={r}>
-                      {r}
+                      {tRole(r, locale)}
                     </option>
                   ))}
                 </select>
@@ -385,7 +389,7 @@ export default function AuditLogsAndRbacPage() {
                           <div className="font-bold">{log.actorName}</div>
                           <div className="text-[11px] hr-muted">{log.actorEmail}</div>
                           <span className="inline-block mt-1 px-2 py-0.5 rounded-md hr-subtle text-[10px] font-bold">
-                            {log.actorRole}
+                            {tRole(log.actorRole, locale)}
                           </span>
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap">
@@ -499,7 +503,7 @@ export default function AuditLogsAndRbacPage() {
                     <th className="py-2.5 px-3">Feature Permission & Key</th>
                     {ALL_ROLES.map((r) => (
                       <th key={r} className="py-2.5 px-3 text-center">
-                        {r}
+                        {tRole(r, locale)}
                       </th>
                     ))}
                   </tr>

@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { Target, Award, TrendingUp, BrainCircuit, Plus, X, Lock } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
+import { tRole, tStatus } from "@/lib/i18n";
+import type { Employee } from "@/types/hris";
 
 const NINE_BOX_CELLS = [
   { row: 2, col: 0, title: "Enigma / High Potential", tone: "bg-indigo-50/70 border-indigo-200 dark:bg-indigo-500/12 dark:border-indigo-500/30" },
@@ -32,6 +34,7 @@ export default function PerformancePage() {
     okrs,
     addOkrItem,
     updateOkrProgress,
+    calibrateEmployeeNineBox,
   } = useHRIS();
   const isId = locale === "id";
   const canCalibrate9Box = hasPermission("performance:manage");
@@ -40,6 +43,11 @@ export default function PerformancePage() {
   const [objective, setObjective] = useState("");
   const [kr1, setKr1] = useState("");
   const [kr2, setKr2] = useState("");
+
+  // Interactive 9-Box Calibration Modal state
+  const [calibEmp, setCalibEmp] = useState<Employee | null>(null);
+  const [calibPerf, setCalibPerf] = useState(85);
+  const [calibPot, setCalibPot] = useState(85);
 
   const visibleOkrs =
     activeRole === "Employee"
@@ -104,7 +112,9 @@ export default function PerformancePage() {
               {isId ? "Kalibrasi Talenta 9-Box (Potential × Performance)" : "Interactive 9-Box Talent Calibration (Potential × Performance)"}
             </h2>
             <span className="text-[11px] hr-muted font-semibold">
-              Y: Potential (↑) · X: Performance (→)
+              {isId
+                ? "Klik nama karyawan untuk kalibrasi skor · Y: Potensi (↑) · X: Kinerja (→)"
+                : "Click any staff chip to calibrate · Y: Potential (↑) · X: Performance (→)"}
             </span>
           </div>
 
@@ -126,12 +136,21 @@ export default function PerformancePage() {
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {members.length === 0 ? (
-                      <span className="text-[11px] hr-muted italic">No staff in quadrant</span>
+                      <span className="text-[11px] hr-muted italic">
+                        {isId ? "Belum ada staf di kuadran ini" : "No staff in quadrant"}
+                      </span>
                     ) : (
                       members.map((m) => (
-                        <div
+                        <button
+                          type="button"
                           key={m.id}
-                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 shadow-2xs"
+                          onClick={() => {
+                            setCalibEmp(m);
+                            setCalibPerf(m.performanceScore);
+                            setCalibPot(m.potentialScore);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 text-[11px] font-semibold flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                          title={isId ? "Klik untuk kalibrasi 9-Box" : "Click to calibrate 9-Box"}
                         >
                           <span className="w-5 h-5 rounded-md bg-gradient-to-br from-indigo-600 to-blue-600 text-[9px] font-black text-white flex items-center justify-center">
                             {m.avatarInitials}
@@ -143,7 +162,7 @@ export default function PerformancePage() {
                               {m.cognitiveIq}
                             </span>
                           )}
-                        </div>
+                        </button>
                       ))
                     )}
                   </div>
@@ -158,8 +177,8 @@ export default function PerformancePage() {
             <Lock className="w-4 h-4 text-amber-500 shrink-0" />
             <span>
               {isId
-                ? `Matriks Kalibrasi 9-Box Organisasi bersifat rahasia manajemen (Role aktif: ${activeRole}). Anda menampilkan OKR tim & pribadi.`
-                : `Organization 9-Box Calibration Matrix is restricted to Leadership & HR (Active Role: ${activeRole}).`}
+                ? `Matriks Kalibrasi 9-Box Organisasi bersifat rahasia manajemen (Role aktif: ${tRole(activeRole, locale)}). Anda menampilkan OKR tim & pribadi.`
+                : `Organization 9-Box Calibration Matrix is restricted to Leadership & HR (Active Role: ${tRole(activeRole, locale)}).`}
             </span>
           </div>
         </div>
@@ -195,7 +214,7 @@ export default function PerformancePage() {
                         : "badge-warning"
                     }`}
                   >
-                    {avg}% · {okr.status}
+                    {avg}% · {tStatus(okr.status, locale)}
                   </span>
                 </div>
 
@@ -270,13 +289,88 @@ export default function PerformancePage() {
                   onClick={() => setNewOkrOpen(false)}
                   className="hr-btn-secondary px-4 py-2 rounded-xl font-bold"
                 >
-                  Cancel
+                  {isId ? "Batal" : "Cancel"}
                 </button>
                 <button type="submit" className="btn-quantum px-5 py-2 rounded-xl font-bold">
                   {isId ? "Simpan OKR" : "Save OKR"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive 9-Box Calibration Modal */}
+      {calibEmp && canCalibrate9Box && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={calibEmp.name}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+          onClick={() => setCalibEmp(null)}
+        >
+          <div
+            className="w-full max-w-md hr-card rounded-2xl p-6 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-extrabold">{calibEmp.name}</h3>
+                <p className="text-xs hr-muted">{calibEmp.role} · {calibEmp.department}</p>
+              </div>
+              <button type="button" onClick={() => setCalibEmp(null)} className="hr-muted">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold">
+                  <span>{isId ? "Skor Kinerja (Performance)" : "Performance Score"}</span>
+                  <span className="font-mono text-indigo-600 dark:text-indigo-400">{calibPerf}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={55}
+                  max={100}
+                  value={calibPerf}
+                  onChange={(e) => setCalibPerf(Number(e.target.value))}
+                  className="w-full accent-indigo-600"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex justify-between font-bold">
+                  <span>{isId ? "Skor Potensi Kepemimpinan (Potential)" : "Leadership Potential Score"}</span>
+                  <span className="font-mono text-emerald-600 dark:text-emerald-400">{calibPot}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={55}
+                  max={100}
+                  value={calibPot}
+                  onChange={(e) => setCalibPot(Number(e.target.value))}
+                  className="w-full accent-emerald-600"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setCalibEmp(null)}
+                className="hr-btn-secondary px-4 py-2 rounded-xl text-xs font-bold"
+              >
+                {isId ? "Batal" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  calibrateEmployeeNineBox(calibEmp.id, calibPerf, calibPot);
+                  setCalibEmp(null);
+                }}
+                className="btn-quantum px-5 py-2 rounded-xl text-xs font-bold"
+              >
+                {isId ? "Simpan Kalibrasi 9-Box" : "Save 9-Box Calibration"}
+              </button>
+            </div>
           </div>
         </div>
       )}

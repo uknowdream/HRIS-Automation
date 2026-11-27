@@ -7,8 +7,9 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     status: "operational",
+    runtime: "nodejs-fluid-compute",
     platform: "AetherHR Enterprise Global HRIS & Psychometric Automation Suite",
-    version: "8.0.0",
+    version: "8.1.0",
     timestamp: new Date().toISOString(),
     metrics: {
       totalQuestionBank: ALL_QUESTIONS.length,

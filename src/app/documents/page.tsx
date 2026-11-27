@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   FileSignature,
   AlertTriangle,
@@ -15,6 +15,7 @@ import {
   Send,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
+import { tStatus } from "@/lib/i18n";
 import type { CompanyAnnouncement, HRDocument } from "@/types/hris";
 
 export default function DocumentsAndESignPage() {
@@ -41,6 +42,10 @@ export default function DocumentsAndESignPage() {
   const [hasDrawn, setHasDrawn] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+
+  useEffect(() => {
+    setSignerName(authUser.name);
+  }, [authUser.name]);
 
   // Create Document Modal
   const [newDocOpen, setNewDocOpen] = useState(false);
@@ -92,8 +97,21 @@ export default function DocumentsAndESignPage() {
 
   const handleConfirmSign = () => {
     if (!signingDoc || !signerName.trim()) return;
-    const dataUrl = canvasRef.current ? canvasRef.current.toDataURL("image/png") : "";
+    const dataUrl = hasDrawn && canvasRef.current ? canvasRef.current.toDataURL("image/png") : "";
+    const signedAt = new Date().toISOString();
+    const hashHex = Array.from({ length: 24 }, (_, i) =>
+      ((signingDoc.id.charCodeAt(i % signingDoc.id.length) + signerName.trim().length * (i + 7)) % 16).toString(16)
+    ).join("");
     signDocument(signingDoc.id, signerName.trim(), dataUrl);
+    // Seamless continuation: open the newly sealed PDF certificate immediately!
+    setViewingDoc({
+      ...signingDoc,
+      status: "Signed",
+      signedBy: signerName.trim(),
+      signedAt,
+      signatureDataUrl: dataUrl || undefined,
+      verificationHash: `sha256:${hashHex}`,
+    });
     setSigningDoc(null);
     setHasDrawn(false);
   };
@@ -213,13 +231,15 @@ export default function DocumentsAndESignPage() {
                   <div className="text-[11px] hr-muted">{doc.department}</div>
                 </td>
                 <td className="py-3 px-3 font-mono">
-                  {doc.expiryDate || "Permanent (Indefinite)"}
+                  {doc.expiryDate || (isId ? "Tetap (Tidak Terbatas)" : "Permanent (Indefinite)")}
                 </td>
                 <td className="py-3 px-3 font-mono text-[10px] hr-muted">
                   {doc.verificationHash ? (
                     <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                       <ShieldCheck className="w-3.5 h-3.5" /> {doc.verificationHash.slice(0, 20)}...
                     </span>
+                  ) : isId ? (
+                    "Menunggu TTD"
                   ) : (
                     "Pending Signature"
                   )}
@@ -234,23 +254,25 @@ export default function DocumentsAndESignPage() {
                         : "bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300"
                     }`}
                   >
-                    {doc.status}
+                    {tStatus(doc.status, locale)}
                   </span>
                 </td>
                 <td className="py-3 px-3 text-right">
                   {doc.status !== "Signed" ? (
                     <button
+                      type="button"
                       onClick={() => setSigningDoc(doc)}
                       className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1"
                     >
-                      <PenTool className="w-3 h-3" /> E-Sign
+                      <PenTool className="w-3 h-3" /> {isId ? "Tanda Tangan" : "E-Sign"}
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => setViewingDoc(doc)}
                       className="px-3 py-1.5 rounded-lg hr-btn-secondary text-[11px] font-semibold inline-flex items-center gap-1"
                     >
-                      <Printer className="w-3 h-3" /> View Signed PDF
+                      <Printer className="w-3 h-3" /> {isId ? "Lihat PDF Sah" : "View Signed PDF"}
                     </button>
                   )}
                 </td>

@@ -121,6 +121,10 @@ export interface AttendanceRecord {
   date: string;
   clockIn: string;
   clockOut: string | null;
+  clockInTs?: number;
+  onBreak?: boolean;
+  breakStartTs?: number | null;
+  breakSeconds?: number;
   status: "On Time" | "Late" | "Remote" | "Half Day" | "Absent";
   location: string;
   coordinates: { lat: number; lng: number };

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Wallet,
   Play,
@@ -53,11 +53,19 @@ export default function PayrollPage() {
   const [tab, setTab] = useState<"ledger" | "statutory">("ledger");
   const [running, setRunning] = useState(false);
   const [period, setPeriod] = useState("2026-12");
+  const [selectedRunId, setSelectedRunId] = useState<string>("");
+  const [broadcastedRunIds, setBroadcastedRunIds] = useState<Record<string, boolean>>({});
   const [makerCheckerMode, setMakerCheckerMode] = useState(true);
   const [selectedSlip, setSelectedSlip] = useState<PayslipItem | null>(null);
   const [simEmpId, setSimEmpId] = useState(currentEmployee.id);
   const [simTenureMonths, setSimTenureMonths] = useState(14);
-  const activeRun = payrollRuns[0];
+
+  useEffect(() => {
+    setSimEmpId(currentEmployee.id);
+  }, [currentEmployee.id]);
+
+  const activeRun =
+    payrollRuns.find((r) => r.id === selectedRunId) || payrollRuns[0];
 
   const approvedReimbursements = expenses.filter((e) => e.syncedToPayroll);
   const reimbursementMap = approvedReimbursements.reduce<Record<string, number>>((acc, ex) => {
@@ -106,7 +114,22 @@ export default function PayrollPage() {
   }, [activeRun, canViewAllPayroll, employees, personalSlip, selectedEntity]);
 
   const handleRunPayroll = async () => {
-    if (!canRunPayroll) return;
+    if (!canRunPayroll || running) return;
+    const alreadyDone = payrollRuns.find(
+      (r) => r.period === period && r.status === "Completed"
+    );
+    if (alreadyDone) {
+      pushToast({
+        title: isId ? `Periode ${period} Sudah Selesai Cair` : `Period ${period} Already Disbursed`,
+        description: isId
+          ? "Pilih bulan berikutnya untuk menjalankan siklus payroll baru."
+          : "Select the next month to execute a new payroll cycle.",
+        variant: "warning",
+      });
+      setSelectedRunId(alreadyDone.id);
+      return;
+    }
+
     setRunning(true);
     try {
       const res = await fetch("/api/payroll/calculate", {
@@ -117,6 +140,7 @@ export default function PayrollPage() {
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || "Failed");
       addPayrollRun(data.payrollRun, makerCheckerMode);
+      setSelectedRunId(data.payrollRun.id);
     } catch (err) {
       pushToast({
         title: isId ? "Gagal Menjalankan Payroll" : "Payroll Error",
@@ -228,11 +252,25 @@ export default function PayrollPage() {
             {activeRun && (
               <button
                 type="button"
-                onClick={() => broadcastAllPayslips(activeRun.period, visibleItems.length)}
-                className="btn-emerald px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
+                disabled={Boolean(broadcastedRunIds[activeRun.id])}
+                onClick={() => {
+                  broadcastAllPayslips(activeRun.period, visibleItems.length);
+                  setBroadcastedRunIds((prev) => ({ ...prev, [activeRun.id]: true }));
+                }}
+                className="btn-emerald px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 disabled:opacity-65"
               >
-                <Send className="w-3.5 h-3.5" />
-                {isId ? "Broadcast Slip (WA+Email)" : "Broadcast All Payslips"}
+                {broadcastedRunIds[activeRun.id] ? (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+                {broadcastedRunIds[activeRun.id]
+                  ? isId
+                    ? `Terkirim (${visibleItems.length} Staf) ✓`
+                    : `Dispatched (${visibleItems.length}) ✓`
+                  : isId
+                  ? "Broadcast Slip (WA+Email)"
+                  : "Broadcast All Payslips"}
               </button>
             )}
             <button
@@ -288,15 +326,31 @@ export default function PayrollPage() {
         </div>
 
         {canRunPayroll && (
-          <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-1.5 rounded-xl hr-subtle">
-            <input
-              type="checkbox"
-              checked={makerCheckerMode}
-              onChange={(e) => setMakerCheckerMode(e.target.checked)}
-              className="accent-indigo-600 w-4 h-4"
-            />
-            {isId ? "Verifikasi 4-Mata (Maker–Checker)" : "Four-Eyes Maker–Checker Lock"}
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            {payrollRuns.length > 1 && (
+              <select
+                aria-label="Select Payroll History Run"
+                value={activeRun?.id || ""}
+                onChange={(e) => setSelectedRunId(e.target.value)}
+                className="px-3 py-1.5 rounded-xl hr-input text-xs font-mono font-bold"
+              >
+                {payrollRuns.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.period} ({tStatus(r.status, locale)})
+                  </option>
+                ))}
+              </select>
+            )}
+            <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer px-3 py-1.5 rounded-xl hr-subtle">
+              <input
+                type="checkbox"
+                checked={makerCheckerMode}
+                onChange={(e) => setMakerCheckerMode(e.target.checked)}
+                className="accent-indigo-600 w-4 h-4"
+              />
+              {isId ? "Verifikasi 4-Mata (Maker–Checker)" : "Four-Eyes Maker–Checker Lock"}
+            </label>
+          </div>
         )}
       </div>
 

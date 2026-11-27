@@ -21,13 +21,16 @@ import {
 import { useHRIS } from "@/context/HRISContext";
 import { RBACGuard } from "@/components/security/RBACGuard";
 import { SEED_CONNECTORS } from "@/lib/seed-data";
+import { formatConverted } from "@/lib/currency";
 import type { AutomationTrigger } from "@/types/hris";
 
 export default function AutomationStudioPage() {
   const {
     locale,
+    displayCurrency,
     workflows,
     toggleWorkflow,
+    runWorkflowDryTest,
     addWorkflow,
     logs,
     logAutomation,
@@ -37,6 +40,7 @@ export default function AutomationStudioPage() {
     pushToast,
   } = useHRIS();
   const isId = locale === "id";
+  const [recentTestedWfId, setRecentTestedWfId] = useState<string | null>(null);
 
   const [testUrl, setTestUrl] = useState(
     settings.primaryWebhookUrl || "https://httpbin.org/post"
@@ -122,27 +126,11 @@ export default function AutomationStudioPage() {
     }
   };
 
-  const handleTestRunWorkflow = (wfNameLabel: string, trigger: string) => {
-    logAutomation({
-      event: trigger,
-      channel: "System",
-      recipient: "Multi-Channel Pipeline (Email + WA + Webhook)",
-      status: "Success",
-      latencyMs: 92,
-      detail: `Manual test execution completed for "${wfNameLabel}" — all actions verified.`,
-    });
-    recordAuditLog({
-      module: "Automation & API",
-      action: "workflow.dry_run",
-      target: wfNameLabel,
-      severity: "INFO",
-      detail: `Executed end-to-end simulation for trigger [${trigger}].`,
-    });
-    pushToast({
-      title: isId ? "Workflow Berhasil Diuji!" : "Workflow Dry-Run Succeeded!",
-      description: wfNameLabel,
-      variant: "success",
-    });
+  const handleTestRunWorkflow = (wfId: string) => {
+    if (recentTestedWfId === wfId) return;
+    runWorkflowDryTest(wfId);
+    setRecentTestedWfId(wfId);
+    setTimeout(() => setRecentTestedWfId((cur) => (cur === wfId ? null : cur)), 2000);
   };
 
   const handleCreateWorkflow = (e: React.FormEvent) => {
@@ -241,7 +229,11 @@ export default function AutomationStudioPage() {
 
             <div className="p-3.5 rounded-xl hr-subtle flex items-center justify-between gap-3">
               <div>
-                <div className="font-bold">{isId ? `Auto-Sync Reimburse ≤ $${settings.microExpenseLimitUSD}` : `Auto-Sync Expenses ≤ $${settings.microExpenseLimitUSD}`}</div>
+                <div className="font-bold">
+                  {isId
+                    ? `Auto-Sync Reimburse ≤ ${formatConverted(settings.microExpenseLimitUSD, "USD", displayCurrency)}`
+                    : `Auto-Sync Expenses ≤ ${formatConverted(settings.microExpenseLimitUSD, "USD", displayCurrency)}`}
+                </div>
                 <div className="text-[11px] hr-muted">Instant approval & next-cycle Payroll merge</div>
               </div>
               <button
@@ -316,10 +308,21 @@ export default function AutomationStudioPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => handleTestRunWorkflow(wf.name, wf.trigger)}
-                    className="hr-btn-secondary px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"
+                    disabled={recentTestedWfId === wf.id}
+                    onClick={() => handleTestRunWorkflow(wf.id)}
+                    className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 transition ${
+                      recentTestedWfId === wf.id ? "badge-success" : "hr-btn-secondary"
+                    }`}
                   >
-                    <Play className="w-3 h-3 text-indigo-600" /> {isId ? "Uji Jalankan" : "Test Run"}
+                    {recentTestedWfId === wf.id ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {isId ? "Tereksekusi ✓" : "Executed ✓"}
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3 h-3 text-indigo-600" /> {isId ? "Uji Jalankan" : "Test Run"}
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

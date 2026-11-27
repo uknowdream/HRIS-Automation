@@ -159,11 +159,13 @@ interface HRISContextValue {
   offboardEmployee: (id: string) => void;
   hireCandidateToEmployee: (candidateId: string) => Employee | null;
 
-  clockInEmployee: (record: Omit<AttendanceRecord, "id">) => void;
+  clockInEmployee: (record: Omit<AttendanceRecord, "id">) => boolean;
+  toggleBreakAttendance: (recordId: string) => void;
   clockOutEmployee: (recordId: string) => void;
+  resetTodayShiftForDemo: (employeeId: string) => void;
   cycleShiftCell: (employeeId: string, dayIndex: number) => void;
 
-  submitLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => void;
+  submitLeaveRequest: (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => boolean;
   decideLeaveRequest: (id: string, decision: "Approved" | "Rejected") => void;
 
   submitOvertimeRequest: (req: {
@@ -172,7 +174,7 @@ interface HRISContextValue {
     hours: number;
     isHoliday: boolean;
     reason: string;
-  }) => void;
+  }) => boolean;
   decideOvertimeRequest: (id: string, decision: "Approved" | "Rejected") => void;
 
   submitProfileChangeRequest: (req: Omit<ProfileChangeRequest, "id" | "status" | "submittedAt">) => void;
@@ -211,11 +213,13 @@ interface HRISContextValue {
   saveAssessmentReport: (report: AssessmentReport) => void;
 
   toggleWorkflow: (id: string) => void;
+  runWorkflowDryTest: (workflowId: string) => void;
   addWorkflow: (wf: Omit<AutomationWorkflow, "id" | "runsCount" | "successRate" | "lastRunAt">) => void;
   logAutomation: (entry: Omit<AutomationLog, "id" | "timestamp">) => void;
 
   addOkrItem: (item: Omit<OKRItem, "id" | "status">) => void;
   updateOkrProgress: (okrId: string, krIndex: number, progress: number) => void;
+  calibrateEmployeeNineBox: (employeeId: string, performanceScore: number, potentialScore: number) => void;
   updateSettings: (patch: Partial<IntegrationSettings>) => void;
   resetDemoData: () => void;
 
@@ -543,12 +547,16 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [activeRole, rolePermissions]
   );
 
+  // Anti-spam Toast Deduplicator: replaces duplicate active toast with same title instead of stacking spam!
   const pushToast = useCallback((toast: Omit<ToastItem, "id">) => {
     const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    setToasts((prev) => [...prev.slice(-3), { ...toast, id }]);
+    setToasts((prev) => {
+      const withoutDup = prev.filter((item) => item.title !== toast.title);
+      return [...withoutDup.slice(-2), { ...toast, id }];
+    });
     setTimeout(() => {
       setToasts((prev) => prev.filter((item) => item.id !== id));
-    }, 4200);
+    }, 3800);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
@@ -1001,8 +1009,43 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   );
 
   const clockInEmployee = useCallback(
-    (record: Omit<AttendanceRecord, "id">) => {
-      const created: AttendanceRecord = { ...record, id: `att_${Date.now()}` };
+    (record: Omit<AttendanceRecord, "id">): boolean => {
+      // STRICT IDEMPOTENCY GUARD: block duplicate Clock-In on the exact same day!
+      const existingToday = attendance.find(
+        (a) => a.employeeId === record.employeeId && a.date === record.date
+      );
+      if (existingToday) {
+        pushToast({
+          title:
+            locale === "id"
+              ? existingToday.clockOut
+                ? "Shift Hari Ini Sudah Selesai"
+                : `Sudah Clock-In (${existingToday.clockIn})`
+              : existingToday.clockOut
+              ? "Today's Shift Already Completed"
+              : `Already Clocked In (${existingToday.clockIn})`,
+          description:
+            locale === "id"
+              ? existingToday.clockOut
+                ? "Gunakan tombol Ajukan Lembur (SPL) jika bekerja lembur hari ini."
+                : "Gunakan tombol Istirahat atau Clock-Out pada panel shift aktif."
+              : existingToday.clockOut
+              ? "Submit an Overtime (SPL) request if working extra hours today."
+              : "Use Start Break or Clock-Out in your active shift terminal.",
+          variant: "warning",
+        });
+        return false;
+      }
+
+      const nowTs = Date.now();
+      const created: AttendanceRecord = {
+        ...record,
+        id: `att_${nowTs}`,
+        clockInTs: nowTs,
+        onBreak: false,
+        breakStartTs: null,
+        breakSeconds: 0,
+      };
       setAttendance((prev) => [created, ...prev]);
       if (record.status === "Late") {
         dispatchWorkflowTrigger(
@@ -1027,37 +1070,136 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         detail: `Geofence verified check-in at ${record.location} via ${record.device}.`,
       });
       pushToast({
-        title: locale === "id" ? "Clock-In GPS Berhasil" : "GPS Clock-In Verified",
-        description: `${record.employeeName} — ${record.clockIn} (${record.status})`,
+        title: locale === "id" ? "Clock-In GPS Berhasil — Shift Aktif!" : "GPS Clock-In Verified — Shift Live!",
+        description:
+          locale === "id"
+            ? `${record.employeeName} mulai bekerja pukul ${record.clockIn}. Stopwatch shift kini aktif.`
+            : `${record.employeeName} started shift at ${record.clockIn}. Live timer active.`,
         variant: "success",
       });
+      return true;
     },
-    [dispatchWorkflowTrigger, locale, logAutomation, pushToast, recordAuditLog]
+    [attendance, dispatchWorkflowTrigger, locale, logAutomation, pushToast, recordAuditLog]
   );
 
-  const clockOutEmployee = useCallback(
+  const toggleBreakAttendance = useCallback(
     (recordId: string) => {
-      const nowStr = new Date().toTimeString().slice(0, 5);
       const target = attendance.find((a) => a.id === recordId);
+      if (!target || target.clockOut) return;
+      const nowTs = Date.now();
+      const startingBreak = !target.onBreak;
+
       setAttendance((prev) =>
-        prev.map((a) => (a.id === recordId ? { ...a, clockOut: nowStr, workHours: 8.2 } : a))
+        prev.map((a) => {
+          if (a.id !== recordId) return a;
+          if (startingBreak) {
+            return { ...a, onBreak: true, breakStartTs: nowTs };
+          }
+          const deltaSec = a.breakStartTs ? Math.max(0, Math.floor((nowTs - a.breakStartTs) / 1000)) : 0;
+          return {
+            ...a,
+            onBreak: false,
+            breakStartTs: null,
+            breakSeconds: (a.breakSeconds || 0) + deltaSec,
+          };
+        })
       );
-      if (target) {
-        recordAuditLog({
-          module: "Attendance & Leave",
-          action: "attendance.clock_out",
-          target: `${target.employeeName} (${nowStr})`,
-          severity: "INFO",
-          detail: "Completed shift check-out (8.2h logged to payroll timesheet).",
-        });
-      }
+
+      recordAuditLog({
+        module: "Attendance & Leave",
+        action: startingBreak ? "attendance.break_started" : "attendance.break_ended",
+        target: target.employeeName,
+        severity: "INFO",
+        detail: startingBreak
+          ? "Employee paused active shift for rest/lunch break."
+          : "Employee resumed active shift from break.",
+      });
       pushToast({
-        title: locale === "id" ? "Clock-Out Tercatat" : "Clock-Out Recorded",
-        description: `${nowStr} — Timesheet synced to payroll.`,
+        title: startingBreak
+          ? locale === "id"
+            ? "Mode Istirahat Dimulai"
+            : "Break Timer Started"
+          : locale === "id"
+          ? "Kembali Bekerja — Shift Dilanjutkan"
+          : "Break Ended — Shift Resumed",
+        description: target.employeeName,
         variant: "info",
       });
     },
     [attendance, locale, pushToast, recordAuditLog]
+  );
+
+  const clockOutEmployee = useCallback(
+    (recordId: string) => {
+      const target = attendance.find((a) => a.id === recordId);
+      if (!target || target.clockOut) return;
+      const nowTs = Date.now();
+      const nowStr = new Date(nowTs).toTimeString().slice(0, 5);
+
+      let computedHours = 8.0;
+      if (target.clockInTs) {
+        const extraBreak =
+          target.onBreak && target.breakStartTs
+            ? Math.max(0, Math.floor((nowTs - target.breakStartTs) / 1000))
+            : 0;
+        const totalBreak = (target.breakSeconds || 0) + extraBreak;
+        const netSec = Math.max(60, Math.floor((nowTs - target.clockInTs) / 1000) - totalBreak);
+        computedHours = Math.max(0.02, Math.round((netSec / 3600) * 100) / 100);
+      } else {
+        const [inH, inM] = target.clockIn.split(":").map(Number);
+        const [outH, outM] = nowStr.split(":").map(Number);
+        const diffMins = Math.max(15, outH * 60 + outM - (inH * 60 + inM));
+        computedHours = Math.round((diffMins / 60) * 100) / 100;
+      }
+
+      setAttendance((prev) =>
+        prev.map((a) =>
+          a.id === recordId
+            ? {
+                ...a,
+                clockOut: nowStr,
+                onBreak: false,
+                breakStartTs: null,
+                workHours: computedHours,
+              }
+            : a
+        )
+      );
+      recordAuditLog({
+        module: "Attendance & Leave",
+        action: "attendance.clock_out",
+        target: `${target.employeeName} (${nowStr})`,
+        severity: "INFO",
+        detail: `Completed shift check-out (${computedHours}h net logged to payroll timesheet).`,
+      });
+      pushToast({
+        title: locale === "id" ? "Shift Selesai & Tersinkron ke Payroll!" : "Clock-Out Recorded & Synced!",
+        description:
+          locale === "id"
+            ? `${target.employeeName}: ${target.clockIn} → ${nowStr} (${computedHours} jam tercatat).`
+            : `${target.employeeName}: ${target.clockIn} → ${nowStr} (${computedHours}h logged).`,
+        variant: "success",
+      });
+    },
+    [attendance, locale, pushToast, recordAuditLog]
+  );
+
+  const resetTodayShiftForDemo = useCallback(
+    (employeeId: string) => {
+      const today = new Date().toISOString().slice(0, 10);
+      setAttendance((prev) =>
+        prev.filter((a) => !(a.employeeId === employeeId && a.date === today))
+      );
+      pushToast({
+        title: locale === "id" ? "Simulasi Shift Hari Ini Direset" : "Today's Demo Shift Reset",
+        description:
+          locale === "id"
+            ? "Anda dapat menguji ulang alur Clock-In → Istirahat → Clock-Out."
+            : "You can now replay Clock-In → Break → Clock-Out cleanly.",
+        variant: "info",
+      });
+    },
+    [locale, pushToast]
   );
 
   const cycleShiftCell = useCallback(
@@ -1085,9 +1227,40 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [recordAuditLog, shiftRoster]
   );
 
-  // SMART AUTO-PILOT + 2-STAGE APPROVAL LEAVE SUBMISSION
+  // SMART AUTO-PILOT + 2-STAGE APPROVAL LEAVE SUBMISSION (with Date & Duplicate Guards!)
   const submitLeaveRequest = useCallback(
-    (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">) => {
+    (req: Omit<LeaveRequest, "id" | "status" | "submittedAt">): boolean => {
+      if (req.endDate < req.startDate) {
+        pushToast({
+          title: locale === "id" ? "Tanggal Cuti Tidak Valid" : "Invalid Leave Date Range",
+          description:
+            locale === "id"
+              ? "Tanggal selesai harus sama atau setelah tanggal mulai."
+              : "End date must be on or after start date.",
+          variant: "warning",
+        });
+        return false;
+      }
+
+      const duplicate = leaves.find(
+        (l) =>
+          l.employeeId === req.employeeId &&
+          l.status !== "Rejected" &&
+          l.startDate === req.startDate &&
+          l.endDate === req.endDate
+      );
+      if (duplicate) {
+        pushToast({
+          title: locale === "id" ? "Pengajuan Cuti Sudah Ada" : "Duplicate Leave Request",
+          description:
+            locale === "id"
+              ? `Pengajuan tanggal ${req.startDate} → ${req.endDate} sudah tercatat (${duplicate.status}).`
+              : `A leave request for ${req.startDate} → ${req.endDate} already exists (${duplicate.status}).`,
+          variant: "warning",
+        });
+        return false;
+      }
+
       const emp = employees.find((e) => e.id === req.employeeId);
       const eligibleAutoApprove =
         settings.autoApproveShortLeave &&
@@ -1159,10 +1332,12 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
           variant: "info",
         });
       }
+      return true;
     },
     [
       dispatchWorkflowTrigger,
       employees,
+      leaves,
       locale,
       pushNotification,
       pushToast,
@@ -1266,10 +1441,22 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [activeRole, authUser.name, dispatchWorkflowTrigger, leaves, locale, logAutomation, pushNotification, pushToast, recordAuditLog]
   );
 
-  // OVERTIME (SPL KEPMENAKER 1.5x / 2x) SUBMISSION & APPROVAL -> PAYROLL SYNC
+  // OVERTIME (SPL KEPMENAKER 1.5x / 2x) SUBMISSION & APPROVAL -> PAYROLL SYNC (with Duplicate Guard!)
   const submitOvertimeRequest: HRISContextValue["submitOvertimeRequest"] = useCallback(
     ({ employeeId, date, hours, isHoliday, reason }) => {
       const emp = employees.find((e) => e.id === employeeId) || currentEmployee;
+      const dup = overtimeRequests.find(
+        (o) => o.employeeId === emp.id && o.date === date && o.status !== "Rejected"
+      );
+      if (dup) {
+        pushToast({
+          title: locale === "id" ? "SPL Tanggal Ini Sudah Tercatat" : "SPL Already Submitted for This Date",
+          description: `${emp.name} (${date} · ${dup.hours}h · ${dup.status})`,
+          variant: "warning",
+        });
+        return false;
+      }
+
       const calc = calculateOvertimePayKepmenaker(emp.baseSalary + emp.allowances, hours, isHoliday);
       const created: OvertimeRequest = {
         id: `ot_${Date.now()}`,
@@ -1306,8 +1493,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         description: `${emp.name} · ${calc.formulaLabel}`,
         variant: "info",
       });
+      return true;
     },
-    [currentEmployee, employees, locale, pushNotification, pushToast, recordAuditLog]
+    [currentEmployee, employees, locale, overtimeRequests, pushNotification, pushToast, recordAuditLog]
   );
 
   const decideOvertimeRequest = useCallback(
@@ -1453,7 +1641,10 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
             checkerName: `${authUser.name} (Auto-Verified)`,
             verifiedAt: new Date().toISOString(),
           };
-      setPayrollRuns((prev) => [normalizedRun, ...prev]);
+      setPayrollRuns((prev) => [
+        normalizedRun,
+        ...prev.filter((r) => !(r.period === run.period && r.status === "Awaiting Checker")),
+      ]);
 
       if (requireChecker) {
         recordAuditLog({
@@ -1477,6 +1668,16 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         });
         return;
       }
+
+      // Close loop: settle merged approved reimbursements -> "Paid in Payroll" and clear pending SPL queue!
+      setExpenses((prev) =>
+        prev.map((ex) =>
+          ex.syncedToPayroll ? { ...ex, status: "Paid in Payroll", syncedToPayroll: false } : ex
+        )
+      );
+      setOvertimeRequests((prev) =>
+        prev.map((ot) => (ot.syncedToPayroll ? { ...ot, syncedToPayroll: false } : ot))
+      );
 
       dispatchWorkflowTrigger(
         "payroll.completed",
@@ -1531,6 +1732,15 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
               }
             : r
         )
+      );
+      // Close loop: settle merged approved reimbursements -> "Paid in Payroll" & settle merged SPL overtime!
+      setExpenses((prev) =>
+        prev.map((ex) =>
+          ex.syncedToPayroll ? { ...ex, status: "Paid in Payroll", syncedToPayroll: false } : ex
+        )
+      );
+      setOvertimeRequests((prev) =>
+        prev.map((ot) => (ot.syncedToPayroll ? { ...ot, syncedToPayroll: false } : ot))
       );
       dispatchWorkflowTrigger(
         "payroll.completed",
@@ -1930,18 +2140,52 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [employees.length, locale, logAutomation, pushToast, recordAuditLog]
   );
 
-  const toggleChecklistTask = useCallback((checklistId: string, taskId: string) => {
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === checklistId
-          ? {
-              ...c,
-              tasks: c.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t)),
-            }
-          : c
-      )
-    );
-  }, []);
+  const toggleChecklistTask = useCallback(
+    (checklistId: string, taskId: string) => {
+      const targetChecklist = checklists.find((c) => c.id === checklistId);
+      setChecklists((prev) =>
+        prev.map((c) => {
+          if (c.id !== checklistId) return c;
+          const nextTasks = c.tasks.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+          return { ...c, tasks: nextTasks };
+        })
+      );
+      if (targetChecklist) {
+        const nextTasks = targetChecklist.tasks.map((t) =>
+          t.id === taskId ? { ...t, done: !t.done } : t
+        );
+        const allDone = nextTasks.length > 0 && nextTasks.every((t) => t.done);
+        if (allDone && targetChecklist.type === "Onboarding (30-60-90)") {
+          setEmployees((prev) =>
+            prev.map((e) =>
+              e.id === targetChecklist.employeeId && e.status === "Onboarding"
+                ? { ...e, status: "Active" }
+                : e
+            )
+          );
+          recordAuditLog({
+            module: "People & JML",
+            action: "onboarding.completed_active",
+            target: targetChecklist.employeeName,
+            severity: "INFO",
+            detail: `Completed 100% of 30-60-90 onboarding tasks — status promoted to Active.`,
+          });
+          pushToast({
+            title:
+              locale === "id"
+                ? `Onboarding 100% Selesai: ${targetChecklist.employeeName}!`
+                : `100% Onboarding Complete: ${targetChecklist.employeeName}!`,
+            description:
+              locale === "id"
+                ? "Status karyawan otomatis diperbarui menjadi Aktif di Direktori Global."
+                : "Employee status automatically promoted to Active in Global Directory.",
+            variant: "success",
+          });
+        }
+      }
+    },
+    [checklists, locale, pushToast, recordAuditLog]
+  );
 
   const completeCourse = useCallback(
     (courseId: string) => {
@@ -2232,6 +2476,40 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     [recordAuditLog, workflows]
   );
 
+  const runWorkflowDryTest = useCallback(
+    (workflowId: string) => {
+      const wf = workflows.find((w) => w.id === workflowId);
+      if (!wf) return;
+      const nowIso = new Date().toISOString();
+      setWorkflows((prev) =>
+        prev.map((w) =>
+          w.id === workflowId ? { ...w, runsCount: w.runsCount + 1, lastRunAt: nowIso } : w
+        )
+      );
+      logAutomation({
+        event: wf.trigger,
+        channel: "System",
+        recipient: `Multi-Channel (${wf.actions.length} Actions)`,
+        status: "Success",
+        latencyMs: 88,
+        detail: `Dry-run completed for "${wf.name}" — run #${wf.runsCount + 1} verified.`,
+      });
+      recordAuditLog({
+        module: "Automation & API",
+        action: "workflow.dry_run",
+        target: wf.name,
+        severity: "INFO",
+        detail: `Executed end-to-end simulation for trigger [${wf.trigger}] (run #${wf.runsCount + 1}).`,
+      });
+      pushToast({
+        title: locale === "id" ? "Workflow Berhasil Diuji!" : "Workflow Dry-Run Succeeded!",
+        description: `${wf.name} (Run #${wf.runsCount + 1})`,
+        variant: "success",
+      });
+    },
+    [locale, logAutomation, pushToast, recordAuditLog, workflows]
+  );
+
   const addWorkflow: HRISContextValue["addWorkflow"] = useCallback(
     (wf) => {
       setWorkflows((prev) => [
@@ -2287,11 +2565,41 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const calibrateEmployeeNineBox = useCallback(
+    (employeeId: string, performanceScore: number, potentialScore: number) => {
+      const target = employees.find((e) => e.id === employeeId);
+      if (!target) return;
+      const perf = Math.max(50, Math.min(100, Math.round(performanceScore)));
+      const pot = Math.max(50, Math.min(100, Math.round(potentialScore)));
+      setEmployees((prev) =>
+        prev.map((e) =>
+          e.id === employeeId ? { ...e, performanceScore: perf, potentialScore: pot } : e
+        )
+      );
+      recordAuditLog({
+        module: "People & JML",
+        action: "performance.9box_calibrated",
+        target: `${target.name} (Perf ${perf} · Pot ${pot})`,
+        severity: "SENSITIVE",
+        detail: `Calibrated 9-Box talent placement for ${target.name}: Performance ${perf}%, Potential ${pot}%.`,
+      });
+      pushToast({
+        title: locale === "id" ? "Kalibrasi 9-Box Diperbarui!" : "9-Box Talent Calibrated!",
+        description: `${target.name} · Performance ${perf}% · Potential ${pot}%`,
+        variant: "success",
+      });
+    },
+    [employees, locale, pushToast, recordAuditLog]
+  );
+
   const updateSettings = useCallback(
     (patch: Partial<IntegrationSettings>) => {
       setSettings((prev) => ({ ...prev, ...patch }));
       if (patch.defaultCurrency) {
         setDisplayCurrencyState(patch.defaultCurrency);
+      }
+      if (patch.companyName && patch.companyName.trim()) {
+        setAuthUser((prev) => ({ ...prev, companyName: patch.companyName!.trim() }));
       }
       recordAuditLog({
         module: "Automation & API",
@@ -2423,7 +2731,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         offboardEmployee,
         hireCandidateToEmployee,
         clockInEmployee,
+        toggleBreakAttendance,
         clockOutEmployee,
+        resetTodayShiftForDemo,
         cycleShiftCell,
         submitLeaveRequest,
         decideLeaveRequest,
@@ -2449,10 +2759,12 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         recordInvitation,
         saveAssessmentReport,
         toggleWorkflow,
+        runWorkflowDryTest,
         addWorkflow,
         logAutomation,
         addOkrItem,
         updateOkrProgress,
+        calibrateEmployeeNineBox,
         updateSettings,
         resetDemoData,
         inviteModalOpen,
