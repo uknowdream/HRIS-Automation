@@ -375,11 +375,11 @@ export default function RecruitmentPage() {
                       className="accent-indigo-600"
                     />
                   </th>
-                  <th className="py-2.5 px-3">Candidate</th>
-                  <th className="py-2.5 px-3">Role & Dept</th>
-                  <th className="py-2.5 px-3">Stage</th>
-                  <th className="py-2.5 px-3">Psychometric Score</th>
-                  <th className="py-2.5 px-3 text-right">Instant Dispatch</th>
+                  <th className="py-2.5 px-3">{isId ? "Kandidat" : "Candidate"}</th>
+                  <th className="py-2.5 px-3">{isId ? "Posisi & Divisi" : "Role & Dept"}</th>
+                  <th className="py-2.5 px-3">{isId ? "Tahapan" : "Stage"}</th>
+                  <th className="py-2.5 px-3">{isId ? "Skor Psikotes" : "Psychometric Score"}</th>
+                  <th className="py-2.5 px-3 text-right">{isId ? "Pengiriman Instan" : "Instant Dispatch"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>

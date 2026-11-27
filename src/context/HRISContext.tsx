@@ -17,6 +17,7 @@ import type {
   CandidateStage,
   CompanyAnnouncement,
   CompanyAsset,
+  Currency,
   Employee,
   EntityScope,
   ExpenseClaim,
@@ -61,6 +62,7 @@ import {
   DEFAULT_ROLE_PERMISSIONS,
   ROLE_PERSONAS,
 } from "@/lib/rbac";
+import { getLocalizedSeedNotifications, tRole } from "@/lib/i18n";
 
 export interface ToastItem {
   id: string;
@@ -80,8 +82,12 @@ interface QuickInvitePrefill {
 
 interface HRISContextValue {
   hydrated: boolean;
+  isAuthenticated: boolean;
+  setIsAuthenticated: (v: boolean) => void;
   locale: Locale;
   setLocale: (l: Locale) => void;
+  displayCurrency: Currency;
+  setDisplayCurrency: (c: Currency) => void;
   theme: ThemeMode;
   setTheme: (t: ThemeMode) => void;
   toggleTheme: () => void;
@@ -191,10 +197,10 @@ interface HRISContextValue {
   dismissToast: (id: string) => void;
 }
 
-const STORAGE_KEY = "aetherhr_enterprise_state_v6";
+const STORAGE_KEY = "aetherhr_enterprise_state_v7";
 
 const DEFAULT_AUTH_USER: AuthUser = {
-  id: "usr-super-00",
+  id: "usr-admin-01",
   name: "Nadia Kusuma",
   email: "nadia.kusuma@aetherhr.global",
   role: "HR Admin",
@@ -266,7 +272,9 @@ const SHIFT_ORDER: ShiftCode[] = ["REG", "FLEX", "REM", "NIGHT", "OFF"];
 
 export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
-  const [locale, setLocale] = useState<Locale>("id");
+  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [locale, setLocaleState] = useState<Locale>("id");
+  const [displayCurrency, setDisplayCurrencyState] = useState<Currency>("IDR");
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [activeRole, setActiveRole] = useState<ActiveRole>("HR Admin");
   const [selectedEntity, setSelectedEntity] = useState<EntityScope>("ALL");
@@ -296,18 +304,48 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const [logs, setLogs] = useState<AutomationLog[]>(SEED_LOGS);
   const [okrs, setOkrs] = useState<OKRItem[]>(SEED_OKRS);
   const [settings, setSettings] = useState<IntegrationSettings>(DEFAULT_SETTINGS);
-  const [notifications, setNotifications] = useState<HRNotification[]>(SEED_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<HRNotification[]>(() =>
+    getLocalizedSeedNotifications("id")
+  );
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [invitePrefill, setInvitePrefill] = useState<QuickInvitePrefill | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
+  const setLocale = useCallback((nextLocale: Locale) => {
+    setLocaleState(nextLocale);
+    const localizedSeed = getLocalizedSeedNotifications(nextLocale);
+    const seedMap = new Map(localizedSeed.map((s) => [s.id, s]));
+    setNotifications((prev) =>
+      prev.map((n) => {
+        const match = seedMap.get(n.id);
+        return match ? { ...match, read: n.read } : n;
+      })
+    );
+  }, []);
+
+  const setDisplayCurrency = useCallback((nextCurr: Currency) => {
+    setDisplayCurrencyState(nextCurr);
+    setSettings((prev) => ({ ...prev, defaultCurrency: nextCurr }));
+    fetch("/api/auth/session", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultCurrency: nextCurr }),
+    }).catch(() => {});
+  }, []);
+
   useEffect(() => {
+    let localSignedOut = false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed.locale) setLocale(parsed.locale);
+        if (typeof parsed.isAuthenticated === "boolean") {
+          setIsAuthenticated(parsed.isAuthenticated);
+          localSignedOut = !parsed.isAuthenticated;
+        }
+        if (parsed.locale === "id" || parsed.locale === "en") setLocaleState(parsed.locale);
+        if (parsed.displayCurrency) setDisplayCurrencyState(parsed.displayCurrency);
         if (parsed.theme === "dark" || parsed.theme === "light") setTheme(parsed.theme);
         if (parsed.activeRole) setActiveRole(parsed.activeRole);
         if (parsed.selectedEntity) setSelectedEntity(parsed.selectedEntity);
@@ -336,7 +374,12 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(parsed.logs)) setLogs(parsed.logs);
         if (Array.isArray(parsed.okrs)) setOkrs(parsed.okrs);
         if (Array.isArray(parsed.notifications)) setNotifications(parsed.notifications);
-        if (parsed.settings) setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
+        if (parsed.settings) {
+          setSettings({ ...DEFAULT_SETTINGS, ...parsed.settings });
+          if (!parsed.displayCurrency && parsed.settings.defaultCurrency) {
+            setDisplayCurrencyState(parsed.settings.defaultCurrency);
+          }
+        }
       }
     } catch {
       // ignore
@@ -346,8 +389,14 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       .then((r) => r.json())
       .then((d) => {
         if (d.authenticated && d.user) {
+          setIsAuthenticated(true);
           setAuthUser(d.user);
           setActiveRole(d.user.role);
+          if (d.user.defaultCurrency) {
+            setDisplayCurrencyState(d.user.defaultCurrency);
+          }
+        } else if (localSignedOut) {
+          setIsAuthenticated(false);
         }
       })
       .catch(() => {});
@@ -361,7 +410,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
+          isAuthenticated,
           locale,
+          displayCurrency,
           theme,
           activeRole,
           selectedEntity,
@@ -394,7 +445,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     }
   }, [
     hydrated,
+    isAuthenticated,
     locale,
+    displayCurrency,
     theme,
     activeRole,
     selectedEntity,
@@ -588,6 +641,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     (nextRole: ActiveRole) => {
       const persona = ROLE_PERSONAS[nextRole];
       setActiveRole(nextRole);
+      setIsAuthenticated(true);
       setAuthUser((prev) => ({
         ...prev,
         name: persona.defaultName,
@@ -595,6 +649,18 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         role: nextRole,
         avatarInitials: persona.avatarInitials,
       }));
+      // Synchronize server HttpOnly session cookie so F5 refresh never reverts the role!
+      fetch("/api/auth/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          role: nextRole,
+          name: persona.defaultName,
+          email: persona.defaultEmail,
+          avatarInitials: persona.avatarInitials,
+        }),
+      }).catch(() => {});
+
       recordAuditLog({
         module: "RBAC & Security",
         action: "rbac.role_switched",
@@ -608,7 +674,10 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
         },
       });
       pushToast({
-        title: locale === "id" ? `Perspektif Role: ${nextRole}` : `Active Role: ${nextRole}`,
+        title:
+          locale === "id"
+            ? `Role Aktif: ${tRole(nextRole, "id")}`
+            : `Active Role: ${tRole(nextRole, "en")}`,
         description: `${persona.defaultName} · ${persona.summary[locale]}`,
         variant: "info",
       });
@@ -637,6 +706,7 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    setIsAuthenticated(false);
     try {
       await fetch("/api/auth/session", { method: "DELETE" });
     } catch {
@@ -1770,6 +1840,9 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
   const updateSettings = useCallback(
     (patch: Partial<IntegrationSettings>) => {
       setSettings((prev) => ({ ...prev, ...patch }));
+      if (patch.defaultCurrency) {
+        setDisplayCurrencyState(patch.defaultCurrency);
+      }
       recordAuditLog({
         module: "Automation & API",
         action: "settings.vault_updated",
@@ -1788,6 +1861,8 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
 
   const resetDemoData = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    setIsAuthenticated(true);
+    setDisplayCurrencyState("IDR");
     setSelectedEntity("ALL");
     setAuthUser(DEFAULT_AUTH_USER);
     setActiveRole("HR Admin");
@@ -1810,14 +1885,17 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     setWorkflows(SEED_WORKFLOWS);
     setLogs(SEED_LOGS);
     setOkrs(SEED_OKRS);
-    setNotifications(SEED_NOTIFICATIONS);
+    setNotifications(getLocalizedSeedNotifications(locale));
     setSettings(DEFAULT_SETTINGS);
     pushToast({
-      title: "Workspace Reset",
-      description: "Restored pristine enterprise HRIS v6.0 dataset.",
+      title: locale === "id" ? "Workspace Direset" : "Workspace Reset",
+      description:
+        locale === "id"
+          ? "Seluruh dataset demo HRIS dikembalikan ke kondisi awal."
+          : "Restored pristine enterprise HRIS v7.0 dataset.",
       variant: "info",
     });
-  }, [pushToast]);
+  }, [locale, pushToast]);
 
   const openInviteModal = useCallback((prefill?: QuickInvitePrefill) => {
     setInvitePrefill(prefill || null);
@@ -1837,8 +1915,12 @@ export function HRISProvider({ children }: { children: React.ReactNode }) {
     <HRISContext.Provider
       value={{
         hydrated,
+        isAuthenticated,
+        setIsAuthenticated,
         locale,
         setLocale,
+        displayCurrency,
+        setDisplayCurrency,
         theme,
         setTheme,
         toggleTheme,

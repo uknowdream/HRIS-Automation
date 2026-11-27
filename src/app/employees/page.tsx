@@ -20,11 +20,14 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { formatCurrency } from "@/lib/payroll-engine";
+import { formatConverted } from "@/lib/currency";
+import { tRole, tStatus } from "@/lib/i18n";
 import type { Currency, Employee, EmploymentType } from "@/types/hris";
 
 export default function EmployeesPage() {
   const {
     locale,
+    displayCurrency,
     activeRole,
     selectedEntity,
     currentEmployee,
@@ -321,20 +324,20 @@ export default function EmployeesPage() {
                       : "badge-warning"
                   }`}
                 >
-                  {emp.status}
+                  {tStatus(emp.status, locale)}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl hr-subtle">
                   <div className="text-[10px] hr-muted flex items-center gap-1">
-                    <Building2 className="w-3 h-3" /> Dept
+                    <Building2 className="w-3 h-3" /> {isId ? "Divisi" : "Dept"}
                   </div>
                   <div className="font-semibold truncate mt-0.5">{emp.department}</div>
                 </div>
                 <div className="p-2.5 rounded-xl hr-subtle">
                   <div className="text-[10px] hr-muted flex items-center gap-1">
-                    <MapPin className="w-3 h-3" /> Location
+                    <MapPin className="w-3 h-3" /> {isId ? "Lokasi" : "Location"}
                   </div>
                   <div className="font-semibold truncate mt-0.5">{emp.location}</div>
                 </div>
@@ -472,37 +475,52 @@ export default function EmployeesPage() {
 
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3 rounded-xl hr-subtle">
-                <div className="hr-muted">Monthly Gross</div>
+                <div className="hr-muted">
+                  {isId ? `Gaji Bruto (${displayCurrency})` : `Monthly Gross (${displayCurrency})`}
+                </div>
                 {canSeeSelectedEmpComp ? (
-                  <div className="text-sm font-extrabold mt-0.5 text-emerald-600 dark:text-emerald-400 font-mono">
-                    {formatCurrency(selectedEmp.baseSalary + selectedEmp.allowances, selectedEmp.currency)}
+                  <div>
+                    <div className="text-sm font-extrabold mt-0.5 text-emerald-600 dark:text-emerald-400 font-mono">
+                      {formatConverted(
+                        selectedEmp.baseSalary + selectedEmp.allowances,
+                        selectedEmp.currency,
+                        displayCurrency
+                      )}
+                    </div>
+                    {selectedEmp.currency !== displayCurrency && (
+                      <div className="text-[10px] hr-muted font-mono">
+                        ({formatCurrency(selectedEmp.baseSalary + selectedEmp.allowances, selectedEmp.currency)})
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-xs font-bold mt-1 hr-muted flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-amber-500" /> Protected by RBAC
+                    <Lock className="w-3 h-3 text-amber-500" />
+                    {isId ? "Dilindungi RBAC" : "Protected by RBAC"}
                   </div>
                 )}
               </div>
               <div className="p-3 rounded-xl hr-subtle">
-                <div className="hr-muted">Cognitive / DISC</div>
+                <div className="hr-muted">{isId ? "Kognitif / DISC" : "Cognitive / DISC"}</div>
                 {canViewIq || selectedEmp.id === currentEmployee.id ? (
                   <div className="text-sm font-extrabold mt-0.5 text-indigo-600 dark:text-indigo-400">
                     IQ {selectedEmp.cognitiveIq || 122} · {selectedEmp.discProfile || "D-C"}
                   </div>
                 ) : (
                   <div className="text-xs font-bold mt-1 hr-muted flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-amber-500" /> Confidential
+                    <Lock className="w-3 h-3 text-amber-500" />
+                    {isId ? "Rahasia HR" : "Confidential"}
                   </div>
                 )}
               </div>
               <div className="p-3 rounded-xl hr-subtle">
-                <div className="hr-muted">Performance / Attendance</div>
+                <div className="hr-muted">{isId ? "Kinerja / Kehadiran" : "Performance / Attendance"}</div>
                 <div className="text-sm font-bold mt-0.5">
                   {selectedEmp.performanceScore}% · {selectedEmp.attendanceRate}%
                 </div>
               </div>
               <div className="p-3 rounded-xl hr-subtle">
-                <div className="hr-muted">Tax Status / Timezone</div>
+                <div className="hr-muted">{isId ? "Status Pajak / Zona Waktu" : "Tax Status / Timezone"}</div>
                 <div className="text-sm font-bold mt-0.5 truncate">
                   {canSeeSelectedEmpComp ? selectedEmp.taxStatus : "•••"} · {selectedEmp.timezone.split(" ")[0]}
                 </div>

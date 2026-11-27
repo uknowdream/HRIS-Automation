@@ -414,13 +414,13 @@ export default function AssessmentsCenterPage() {
           <table className="w-full text-left text-xs min-w-[760px]">
             <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
               <tr>
-                <th className="py-2.5 px-3">Candidate</th>
-                <th className="py-2.5 px-3">Est. IQ & Percentile</th>
-                <th className="py-2.5 px-3">DISC Profile</th>
-                <th className="py-2.5 px-3">SJT Leadership</th>
-                <th className="py-2.5 px-3">Proctoring Integrity</th>
-                <th className="py-2.5 px-3">Verdict</th>
-                <th className="py-2.5 px-3 text-right">Certificate</th>
+                <th className="py-2.5 px-3">{isId ? "Kandidat & Posisi" : "Candidate"}</th>
+                <th className="py-2.5 px-3">{isId ? "Estimasi IQ & Persentil" : "Est. IQ & Percentile"}</th>
+                <th className="py-2.5 px-3">{isId ? "Profil DISC" : "DISC Profile"}</th>
+                <th className="py-2.5 px-3">{isId ? "Kepemimpinan SJT" : "SJT Leadership"}</th>
+                <th className="py-2.5 px-3">{isId ? "Integritas Pengawasan" : "Proctoring Integrity"}</th>
+                <th className="py-2.5 px-3">{isId ? "Rekomendasi" : "Verdict"}</th>
+                <th className="py-2.5 px-3 text-right">{isId ? "Sertifikat" : "Certificate"}</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>

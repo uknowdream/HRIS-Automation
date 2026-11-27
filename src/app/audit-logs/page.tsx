@@ -15,6 +15,7 @@ import {
   Sliders,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
+import { tRole } from "@/lib/i18n";
 import { RBACGuard } from "@/components/security/RBACGuard";
 import {
   ALL_ROLES,
@@ -356,12 +357,12 @@ export default function AuditLogsAndRbacPage() {
               <table className="w-full text-left text-xs min-w-[880px]">
                 <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
                   <tr>
-                    <th className="py-2.5 px-3">Timestamp</th>
-                    <th className="py-2.5 px-3">Actor & Role</th>
-                    <th className="py-2.5 px-3">Module & Event</th>
-                    <th className="py-2.5 px-3">Target & Audit Detail</th>
-                    <th className="py-2.5 px-3">Severity</th>
-                    <th className="py-2.5 px-3 text-right">Chain Hash</th>
+                    <th className="py-2.5 px-3">{isId ? "Waktu (UTC)" : "Timestamp"}</th>
+                    <th className="py-2.5 px-3">{isId ? "Aktor & Role" : "Actor & Role"}</th>
+                    <th className="py-2.5 px-3">{isId ? "Modul & Aksi" : "Module & Event"}</th>
+                    <th className="py-2.5 px-3">{isId ? "Target & Rincian Audit" : "Target & Audit Detail"}</th>
+                    <th className="py-2.5 px-3">{isId ? "Tingkat" : "Severity"}</th>
+                    <th className="py-2.5 px-3 text-right">{isId ? "Hash Rantai" : "Chain Hash"}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
@@ -473,10 +474,10 @@ export default function AuditLogsAndRbacPage() {
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold">{r}</span>
+                      <span className="text-xs font-extrabold">{tRole(r, locale)}</span>
                       {active && (
                         <span className="badge-success px-1.5 py-0.5 rounded text-[9px] font-bold">
-                          ACTIVE
+                          {isId ? "AKTIF" : "ACTIVE"}
                         </span>
                       )}
                     </div>

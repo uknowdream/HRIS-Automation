@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { calculateEmployeePayslip, formatCurrency } from "@/lib/payroll-engine";
+import { formatConverted } from "@/lib/currency";
 import { QrCodeSvg } from "@/components/visuals/Charts";
 
 type MobileTab = "home" | "badge" | "payslip" | "leave" | "test";
@@ -33,6 +34,7 @@ export default function MobileAppCompanionPage() {
   const router = useRouter();
   const {
     locale,
+    displayCurrency,
     activeRole,
     currentEmployee,
     hasPermission,
@@ -265,7 +267,7 @@ export default function MobileAppCompanionPage() {
                         {isId ? "Slip Gaji" : "My Payslip"}
                       </div>
                       <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold truncate">
-                        {formatCurrency(payslip.netSalary, payslip.currency)}
+                        {formatConverted(payslip.netSalary, payslip.currency, displayCurrency)}
                       </div>
                     </button>
                     <button
@@ -340,12 +342,14 @@ export default function MobileAppCompanionPage() {
 
               {tab === "payslip" && (
                 <div className="space-y-3">
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 border border-emerald-500/35">
-                    <div className="text-[11px] text-slate-300">Net Take-Home (Nov 2026)</div>
-                    <div className="text-2xl font-black font-mono text-emerald-300 mt-0.5">
-                      {formatCurrency(payslip.netSalary, payslip.currency)}
+                  <div className="p-4 rounded-2xl badge-success">
+                    <div className="text-[11px] font-semibold">
+                      {isId ? `Gaji Bersih (${displayCurrency})` : `Net Take-Home (${displayCurrency})`}
                     </div>
-                    <div className="text-[10px] text-slate-300 mt-1">{payslip.taxRateLabel}</div>
+                    <div className="text-2xl font-extrabold font-mono mt-0.5">
+                      {formatConverted(payslip.netSalary, payslip.currency, displayCurrency)}
+                    </div>
+                    <div className="text-[10px] opacity-80 mt-1">{payslip.taxRateLabel}</div>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
                     <div className="flex justify-between">

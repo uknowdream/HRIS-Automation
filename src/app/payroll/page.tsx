@@ -18,11 +18,14 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { calculateEmployeePayslip, formatCurrency } from "@/lib/payroll-engine";
+import { convertCurrency, formatConverted } from "@/lib/currency";
+import { tRole, tStatus } from "@/lib/i18n";
 import type { PayslipItem } from "@/types/hris";
 
 export default function PayrollPage() {
   const {
     locale,
+    displayCurrency,
     activeRole,
     selectedEntity,
     currentEmployee,
@@ -48,8 +51,8 @@ export default function PayrollPage() {
   const approvedReimbursements = expenses.filter((e) => e.syncedToPayroll);
   const reimbursementMap = approvedReimbursements.reduce<Record<string, number>>((acc, ex) => {
     const emp = employees.find((e) => e.id === ex.employeeId);
-    if (emp && emp.currency === ex.currency) {
-      acc[emp.id] = (acc[emp.id] || 0) + ex.amount;
+    if (emp) {
+      acc[emp.id] = (acc[emp.id] || 0) + convertCurrency(ex.amount, ex.currency, emp.currency);
     }
     return acc;
   }, {});
@@ -90,7 +93,7 @@ export default function PayrollPage() {
       addPayrollRun(data.payrollRun);
     } catch (err) {
       pushToast({
-        title: "Payroll Error",
+        title: isId ? "Gagal Menjalankan Payroll" : "Payroll Error",
         description: err instanceof Error ? err.message : "Failed to run payroll",
         variant: "error",
       });
@@ -105,14 +108,10 @@ export default function PayrollPage() {
       "Code",
       "Name",
       "Dept",
-      "Currency",
-      "Base",
-      "Allowances",
-      "Gross",
-      "IncomeTax",
-      "BPJS/Health",
-      "BPJS/Pension",
-      "NetSalary",
+      "NativeCurrency",
+      "GrossNative",
+      "NetNative",
+      `Net_${displayCurrency}`,
       "TaxRule",
     ];
     const rows = visibleItems.map((i) => [
@@ -120,13 +119,9 @@ export default function PayrollPage() {
       `"${i.employeeName}"`,
       `"${i.department}"`,
       i.currency,
-      i.baseSalary,
-      i.allowances,
       i.grossSalary,
-      i.incomeTax,
-      i.bpjsHealth,
-      i.bpjsEmployment,
       i.netSalary,
+      convertCurrency(i.netSalary, i.currency, displayCurrency),
       `"${i.taxRateLabel}"`,
     ]);
     const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -134,19 +129,21 @@ export default function PayrollPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aetherhr-payroll-${activeRun.period}.csv`;
+    a.download = `aetherhr-payroll-${activeRun.period}-${displayCurrency}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     recordAuditLog({
       module: "Payroll & Tax",
       action: "payroll.erp_csv_exported",
-      target: `Period ${activeRun.period} (${visibleItems.length} rows)`,
+      target: `Period ${activeRun.period} (${visibleItems.length} rows in ${displayCurrency})`,
       severity: "CRITICAL",
-      detail: `Exported confidential payroll journal CSV for ERP reconciliation.`,
+      detail: `Exported confidential payroll journal CSV (${displayCurrency}).`,
     });
     pushToast({
       title: isId ? "Jurnal Payroll CSV Diunduh" : "Payroll CSV Exported",
-      description: `${visibleItems.length} payslips exported for finance ERP sync.`,
+      description: isId
+        ? `${visibleItems.length} slip gaji diekspor (${displayCurrency}).`
+        : `${visibleItems.length} payslips exported (${displayCurrency}).`,
       variant: "success",
     });
   };
@@ -164,15 +161,14 @@ export default function PayrollPage() {
 
   return (
     <div className="space-y-6">
-      {/* Clean Enterprise Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight flex items-center gap-2.5">
             <Wallet className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
             {canViewAllPayroll
               ? isId
-                ? "Global Multi-Currency Payroll & PPh 21 TER Engine"
-                : "Global Multi-Currency Payroll & Tax Automation"
+                ? `Mesin Payroll Multi-Mata Uang & PPh 21 TER (${displayCurrency})`
+                : `Global Multi-Currency Payroll & Tax Engine (${displayCurrency})`
               : isId
               ? `Brankas Slip Gaji Pribadi (${currentEmployee.name})`
               : `Personal Confidential Payslip Vault (${currentEmployee.name})`}
@@ -180,11 +176,11 @@ export default function PayrollPage() {
           <p className="text-xs sm:text-sm hr-muted mt-1">
             {canViewAllPayroll
               ? isId
-                ? "Perhitungan otomatis PPh 21 TER + BPJS Kesehatan/TK (IDR), CPF (SGD), US FICA (USD), EU & UK dengan distribusi slip gaji WA/Email."
-                : "Automated PPh 21 TER + BPJS (IDR), Singapore CPF (SGD), US FICA (USD), EU & UK deductions with instant payslip dispatch."
+                ? `Seluruh total konsolidasi otomatis dikonversi ke mata uang tampilan aktif (${displayCurrency}), lengkap dengan PPh 21 TER, BPJS, CPF & FICA.`
+                : `All consolidated totals automatically synchronize to your active display currency (${displayCurrency}), with PPh 21 TER, BPJS, CPF & FICA.`
               : isId
-              ? "Mode Self-Service Terenkripsi RBAC: Hanya menampilkan rincian gaji, pajak PPh 21/statutory, dan slip PDF milik Anda sendiri."
-              : "RBAC-Scoped Self-Service Mode: Displays strictly your own monthly earnings, statutory deductions, and downloadable PDF payslips."}
+              ? `Mode Self-Service Terproteksi RBAC: Hanya menampilkan rincian gaji, potongan pajak, dan slip PDF milik Anda (${displayCurrency}).`
+              : `RBAC-Scoped Self-Service Mode: Displays strictly your own earnings, statutory deductions, and PDF payslips (${displayCurrency}).`}
           </p>
         </div>
 
@@ -201,7 +197,7 @@ export default function PayrollPage() {
               onClick={exportPayrollCsv}
               className="hr-btn-secondary px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5"
             >
-              <Download className="w-3.5 h-3.5" /> ERP CSV
+              <Download className="w-3.5 h-3.5" /> ERP CSV ({displayCurrency})
             </button>
             {activeRun && (
               <button
@@ -232,7 +228,8 @@ export default function PayrollPage() {
         ) : (
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl badge-info text-xs font-bold self-start lg:self-auto">
             <Lock className="w-3.5 h-3.5" />
-            Role: {activeRole} · {isId ? "Gaji Rekan Kerja Disembunyikan" : "Peer Salaries Protected"}
+            {tRole(activeRole, locale)} ·{" "}
+            {isId ? "Gaji Rekan Kerja Disembunyikan" : "Peer Salaries Protected"}
           </div>
         )}
       </div>
@@ -243,72 +240,94 @@ export default function PayrollPage() {
           <span className="font-bold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             {isId
-              ? `${approvedReimbursements.length} klaim reimbursement disetujui siap digabungkan otomatis saat Anda klik "Jalankan Auto-Payroll".`
-              : `${approvedReimbursements.length} approved expense claims are queued to auto-merge into allowances on the next Payroll Run.`}
+              ? `${approvedReimbursements.length} klaim reimbursement disetujui siap dikonversi kurs & digabungkan otomatis pada eksekusi Payroll berikutnya.`
+              : `${approvedReimbursements.length} approved expense claims are queued for FX-converted merge on the next Payroll Run.`}
           </span>
         </div>
       )}
 
-      {/* Summary Strip */}
+      {/* Summary Strip Synchronized to displayCurrency */}
       {canViewAllPayroll && activeRun ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">Active Payroll Period</div>
+            <div className="text-xs hr-muted font-medium">
+              {isId ? "Periode Payroll Aktif" : "Active Payroll Period"}
+            </div>
             <div className="text-2xl font-extrabold mt-1 text-indigo-600 dark:text-indigo-400">
               {activeRun.period}
             </div>
             <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {activeRun.status} · {visibleItems.length} Staff
+              <CheckCircle2 className="w-3.5 h-3.5" /> {tStatus(activeRun.status, locale)} ·{" "}
+              {visibleItems.length} {isId ? "Karyawan" : "Staff"}
             </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">Consolidated Gross (USD Eq.)</div>
-            <div className="text-2xl font-extrabold mt-1 tabular-nums">
-              ${activeRun.totalGrossUSD.toLocaleString("en-US")}
+            <div className="text-xs hr-muted font-medium">
+              {isId ? `Total Gaji Kotor (${displayCurrency})` : `Consolidated Gross (${displayCurrency})`}
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold mt-1 tabular-nums truncate">
+              {formatConverted(activeRun.totalGrossUSD, "USD", displayCurrency)}
             </div>
             <div className="text-[11px] hr-muted mt-1 flex items-center gap-1">
-              <Globe2 className="w-3.5 h-3.5 text-indigo-600" /> 5 Currencies Consolidated
+              <Globe2 className="w-3.5 h-3.5 text-indigo-600" />
+              {isId ? "Konsolidasi 5 Mata Uang" : "5 Currencies Consolidated"}
             </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">Consolidated Net Payout (USD Eq.)</div>
-            <div className="text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums">
-              ${activeRun.totalNetUSD.toLocaleString("en-US")}
+            <div className="text-xs hr-muted font-medium">
+              {isId ? `Total Gaji Bersih (${displayCurrency})` : `Consolidated Net Payout (${displayCurrency})`}
             </div>
-            <div className="text-[11px] hr-muted mt-1">Auto-disbursed via Bank API</div>
+            <div className="text-xl sm:text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums truncate">
+              {formatConverted(activeRun.totalNetUSD, "USD", displayCurrency)}
+            </div>
+            <div className="text-[11px] hr-muted mt-1">
+              {isId ? "Pencairan Otomatis via Bank API" : "Auto-disbursed via Bank API"}
+            </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">Compliance Engines Active</div>
+            <div className="text-xs hr-muted font-medium">
+              {isId ? "Mesin Pajak & Kepatuhan" : "Compliance Engines Active"}
+            </div>
             <div className="text-base font-extrabold mt-1 text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
               <Calculator className="w-4 h-4" /> PPh 21 TER + BPJS + CPF
             </div>
-            <div className="text-[11px] hr-muted mt-1">PP 58/2023 & Global Statutory</div>
+            <div className="text-[11px] hr-muted mt-1">
+              {isId ? "PP 58/2023 & Pajak Internasional" : "PP 58/2023 & Global Statutory"}
+            </div>
           </div>
         </div>
       ) : (
-        /* ESS Personal Summary Cards */
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">{isId ? "Gaji Kotor (Gross)" : "Personal Gross Pay"}</div>
-            <div className="text-2xl font-extrabold mt-1 tabular-nums">
-              {formatCurrency(personalSlip.grossSalary, personalSlip.currency)}
+            <div className="text-xs hr-muted font-medium">
+              {isId ? `Gaji Kotor Saya (${displayCurrency})` : `Personal Gross (${displayCurrency})`}
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold mt-1 tabular-nums">
+              {formatConverted(personalSlip.grossSalary, personalSlip.currency, displayCurrency)}
             </div>
             <div className="text-[11px] hr-muted mt-1">{personalSlip.taxRateLabel}</div>
           </div>
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">{isId ? "Total Potongan Pajak & BPJS" : "Statutory Deductions"}</div>
-            <div className="text-2xl font-extrabold mt-1 text-rose-600 dark:text-rose-400 tabular-nums">
-              -{formatCurrency(personalSlip.incomeTax + personalSlip.bpjsHealth + personalSlip.bpjsEmployment, personalSlip.currency)}
+            <div className="text-xs hr-muted font-medium">
+              {isId ? `Potongan Pajak & BPJS (${displayCurrency})` : `Statutory Deductions (${displayCurrency})`}
             </div>
-            <div className="text-[11px] hr-muted mt-1">Auto-calculated & verified</div>
+            <div className="text-xl sm:text-2xl font-extrabold mt-1 text-rose-600 dark:text-rose-400 tabular-nums">
+              -{formatConverted(personalSlip.incomeTax + personalSlip.bpjsHealth + personalSlip.bpjsEmployment, personalSlip.currency, displayCurrency)}
+            </div>
+            <div className="text-[11px] hr-muted mt-1">
+              {isId ? "Dihitung otomatis sesuai PTKP" : "Auto-calculated & verified"}
+            </div>
           </div>
           <div className="hr-card rounded-2xl p-5">
-            <div className="text-xs hr-muted font-medium">{isId ? "Take-Home Pay Bersih" : "Net Take-Home Pay"}</div>
-            <div className="text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums">
-              {formatCurrency(personalSlip.netSalary, personalSlip.currency)}
+            <div className="text-xs hr-muted font-medium">
+              {isId ? `Gaji Bersih Diterima (${displayCurrency})` : `Net Take-Home (${displayCurrency})`}
+            </div>
+            <div className="text-xl sm:text-2xl font-extrabold mt-1 text-emerald-600 dark:text-emerald-400 tabular-nums">
+              {formatConverted(personalSlip.netSalary, personalSlip.currency, displayCurrency)}
             </div>
             <div className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5" /> Confidential ESS Vault
+              <ShieldCheck className="w-3.5 h-3.5" />
+              {isId ? "Brankas Rahasia Karyawan" : "Confidential ESS Vault"}
             </div>
           </div>
         </div>
@@ -320,31 +339,36 @@ export default function PayrollPage() {
           <h2 className="text-base font-extrabold flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
             {canViewAllPayroll
-              ? activeRun?.label || "Global Payroll Ledger"
+              ? isId
+                ? `Jurnal Slip Gaji Periode ${activeRun?.period || period}`
+                : activeRun?.label || "Global Payroll Ledger"
               : isId
-              ? "Riwayat Slip Gaji Digital Saya"
+              ? "Rincian Slip Gaji Digital Saya"
               : "My Digital Payslip Statement"}
           </h2>
           {activeRun && (
             <span className="text-xs hr-muted font-mono">
-              Run ID: {activeRun.id}
+              ID: {activeRun.id} · FX: {displayCurrency}
             </span>
           )}
         </div>
-        <table className="w-full text-left text-xs min-w-[780px]">
+        <table className="w-full text-left text-xs min-w-[800px]">
           <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
             <tr>
-              <th className="py-2.5 px-3">Employee</th>
-              <th className="py-2.5 px-3">Gross Salary</th>
-              <th className="py-2.5 px-3">Tax & Statutory Rule</th>
-              <th className="py-2.5 px-3">Deductions</th>
-              <th className="py-2.5 px-3">Net Take-Home</th>
-              <th className="py-2.5 px-3 text-right">Payslip & Dispatch</th>
+              <th className="py-2.5 px-3">{isId ? "Karyawan" : "Employee"}</th>
+              <th className="py-2.5 px-3">{isId ? "Gaji Kotor (Gross)" : "Gross Salary"}</th>
+              <th className="py-2.5 px-3">{isId ? "Aturan Pajak & BPJS" : "Tax & Statutory Rule"}</th>
+              <th className="py-2.5 px-3">{isId ? "Total Potongan" : "Deductions"}</th>
+              <th className="py-2.5 px-3">
+                {isId ? `Gaji Bersih (${displayCurrency})` : `Net Take-Home (${displayCurrency})`}
+              </th>
+              <th className="py-2.5 px-3 text-right">{isId ? "Slip & Kirim" : "Payslip & Dispatch"}</th>
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
             {visibleItems.map((item) => {
               const emp = employees.find((e) => e.id === item.employeeId);
+              const totalDed = item.incomeTax + item.bpjsHealth + item.bpjsEmployment;
               return (
                 <tr key={item.employeeId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                   <td className="py-3 px-3">
@@ -353,8 +377,15 @@ export default function PayrollPage() {
                       {item.employeeCode} · {item.department}
                     </div>
                   </td>
-                  <td className="py-3 px-3 font-mono font-semibold whitespace-nowrap">
-                    {formatCurrency(item.grossSalary, item.currency)}
+                  <td className="py-3 px-3 font-mono whitespace-nowrap">
+                    <div className="font-semibold">
+                      {formatConverted(item.grossSalary, item.currency, displayCurrency)}
+                    </div>
+                    {item.currency !== displayCurrency && (
+                      <div className="text-[10px] hr-muted">
+                        ({formatCurrency(item.grossSalary, item.currency)})
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 px-3 whitespace-nowrap">
                     <span className="badge-info px-2.5 py-0.5 rounded-full text-[10px] font-bold">
@@ -362,10 +393,17 @@ export default function PayrollPage() {
                     </span>
                   </td>
                   <td className="py-3 px-3 font-mono text-rose-600 dark:text-rose-400 font-semibold whitespace-nowrap">
-                    -{formatCurrency(item.incomeTax + item.bpjsHealth + item.bpjsEmployment, item.currency)}
+                    -{formatConverted(totalDed, item.currency, displayCurrency)}
                   </td>
-                  <td className="py-3 px-3 font-mono font-extrabold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
-                    {formatCurrency(item.netSalary, item.currency)}
+                  <td className="py-3 px-3 font-mono whitespace-nowrap">
+                    <div className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                      {formatConverted(item.netSalary, item.currency, displayCurrency)}
+                    </div>
+                    {item.currency !== displayCurrency && (
+                      <div className="text-[10px] hr-muted">
+                        {isId ? "Asli" : "Native"}: {formatCurrency(item.netSalary, item.currency)}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 px-3 text-right">
                     <div className="inline-flex items-center gap-1.5">
@@ -387,7 +425,7 @@ export default function PayrollPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1.5 rounded-lg badge-success"
-                          title="Send WhatsApp Payslip Notice"
+                          title="WhatsApp"
                         >
                           <MessageCircle className="w-3.5 h-3.5" />
                         </a>
@@ -414,11 +452,14 @@ export default function PayrollPage() {
             <div className="flex items-start justify-between border-b pb-4" style={{ borderColor: "var(--border-subtle)" }}>
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-indigo-600 dark:text-indigo-400 font-bold">
-                  AetherHR Global Technologies · Confidential Digital Payslip
+                  {isId
+                    ? "Slip Gaji Digital Rahasia · Terverifikasi"
+                    : "Confidential Digital Payslip · Verified"}
                 </div>
                 <h2 className="text-lg font-extrabold mt-1">{selectedSlip.employeeName}</h2>
                 <div className="text-xs hr-muted">
-                  {selectedSlip.role} · {selectedSlip.employeeCode} · Period {activeRun?.period || period}
+                  {selectedSlip.role} · {selectedSlip.employeeCode} ·{" "}
+                  {isId ? "Periode" : "Period"} {activeRun?.period || period}
                 </div>
               </div>
               <button
@@ -433,48 +474,48 @@ export default function PayrollPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div className="p-4 rounded-xl hr-subtle space-y-2">
                 <div className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider text-[10px]">
-                  Earnings
+                  {isId ? "Pendapatan" : "Earnings"} ({displayCurrency})
                 </div>
                 <div className="flex justify-between">
-                  <span className="hr-muted">Base Salary</span>
+                  <span className="hr-muted">{isId ? "Gaji Pokok" : "Base Salary"}</span>
                   <span className="font-mono font-semibold">
-                    {formatCurrency(selectedSlip.baseSalary, selectedSlip.currency)}
+                    {formatConverted(selectedSlip.baseSalary, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="hr-muted">Allowances & Reimbursements</span>
+                  <span className="hr-muted">{isId ? "Tunjangan & Reimburse" : "Allowances & Expenses"}</span>
                   <span className="font-mono font-semibold">
-                    {formatCurrency(selectedSlip.allowances, selectedSlip.currency)}
+                    {formatConverted(selectedSlip.allowances, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
                 <div className="flex justify-between pt-2 border-t font-bold" style={{ borderColor: "var(--border-subtle)" }}>
-                  <span>Total Gross</span>
+                  <span>{isId ? "Total Bruto" : "Total Gross"}</span>
                   <span className="font-mono">
-                    {formatCurrency(selectedSlip.grossSalary, selectedSlip.currency)}
+                    {formatConverted(selectedSlip.grossSalary, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
               </div>
 
               <div className="p-4 rounded-xl hr-subtle space-y-2">
                 <div className="font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider text-[10px]">
-                  Statutory Deductions
+                  {isId ? "Potongan Wajib" : "Statutory Deductions"} ({displayCurrency})
                 </div>
                 <div className="flex justify-between">
-                  <span className="hr-muted">Income Tax</span>
+                  <span className="hr-muted">{isId ? "Pajak Penghasilan" : "Income Tax"}</span>
                   <span className="font-mono text-rose-600 dark:text-rose-400">
-                    -{formatCurrency(selectedSlip.incomeTax, selectedSlip.currency)}
+                    -{formatConverted(selectedSlip.incomeTax, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="hr-muted">Health / BPJS Kes</span>
+                  <span className="hr-muted">{isId ? "BPJS Kesehatan" : "Health / BPJS Kes"}</span>
                   <span className="font-mono text-rose-600 dark:text-rose-400">
-                    -{formatCurrency(selectedSlip.bpjsHealth, selectedSlip.currency)}
+                    -{formatConverted(selectedSlip.bpjsHealth, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="hr-muted">Pension / JHT / CPF</span>
+                  <span className="hr-muted">{isId ? "BPJS TK / Pensiun" : "Pension / JHT / CPF"}</span>
                   <span className="font-mono text-rose-600 dark:text-rose-400">
-                    -{formatCurrency(selectedSlip.bpjsEmployment, selectedSlip.currency)}
+                    -{formatConverted(selectedSlip.bpjsEmployment, selectedSlip.currency, displayCurrency)}
                   </span>
                 </div>
               </div>
@@ -482,11 +523,20 @@ export default function PayrollPage() {
 
             <div className="p-4 rounded-2xl badge-success flex items-center justify-between">
               <div>
-                <div className="text-xs font-bold">Net Take-Home Pay</div>
+                <div className="text-xs font-bold">
+                  {isId ? "Gaji Bersih Diterima (Take-Home Pay)" : "Net Take-Home Pay"}
+                </div>
                 <div className="text-[11px] opacity-80">{selectedSlip.taxRateLabel}</div>
               </div>
-              <div className="text-2xl font-extrabold font-mono">
-                {formatCurrency(selectedSlip.netSalary, selectedSlip.currency)}
+              <div className="text-right font-mono">
+                <div className="text-2xl font-extrabold">
+                  {formatConverted(selectedSlip.netSalary, selectedSlip.currency, displayCurrency)}
+                </div>
+                {selectedSlip.currency !== displayCurrency && (
+                  <div className="text-[11px] opacity-80">
+                    ({formatCurrency(selectedSlip.netSalary, selectedSlip.currency)})
+                  </div>
+                )}
               </div>
             </div>
 

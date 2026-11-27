@@ -193,12 +193,12 @@ export default function DocumentsAndESignPage() {
         <table className="w-full text-left text-xs min-w-[780px]">
           <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
             <tr>
-              <th className="py-2.5 px-3">Document & Type</th>
-              <th className="py-2.5 px-3">Employee / Candidate</th>
-              <th className="py-2.5 px-3">Expiry / Term</th>
-              <th className="py-2.5 px-3">Verification Hash</th>
+              <th className="py-2.5 px-3">{isId ? "Dokumen & Jenis" : "Document & Type"}</th>
+              <th className="py-2.5 px-3">{isId ? "Karyawan / Pihak" : "Employee / Candidate"}</th>
+              <th className="py-2.5 px-3">{isId ? "Masa Berlaku" : "Expiry / Term"}</th>
+              <th className="py-2.5 px-3">{isId ? "Hash Verifikasi" : "Verification Hash"}</th>
               <th className="py-2.5 px-3">Status</th>
-              <th className="py-2.5 px-3 text-right">Action</th>
+              <th className="py-2.5 px-3 text-right">{isId ? "Aksi" : "Action"}</th>
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>

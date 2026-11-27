@@ -1,44 +1,162 @@
-import type { Locale } from "@/types/hris";
+import type { ActiveRole, HRNotification, Locale } from "@/types/hris";
+
+export const ROLE_LABELS: Record<ActiveRole, { id: string; en: string }> = {
+  "Super Admin": { id: "Super Admin", en: "Super Admin" },
+  "HR Admin": { id: "Admin HR", en: "HR Admin" },
+  "Finance & Payroll": { id: "Keuangan & Payroll", en: "Finance & Payroll" },
+  "Department Manager": { id: "Manajer Divisi", en: "Department Manager" },
+  Employee: { id: "Karyawan (ESS)", en: "Employee (ESS)" },
+};
+
+export function tRole(role: ActiveRole, locale: Locale): string {
+  return ROLE_LABELS[role]?.[locale] || role;
+}
+
+const STATUS_MAP: Record<string, { id: string; en: string }> = {
+  Active: { id: "Aktif", en: "Active" },
+  "On Leave": { id: "Sedang Cuti", en: "On Leave" },
+  Onboarding: { id: "Onboarding", en: "Onboarding" },
+  Probation: { id: "Masa Percobaan", en: "Probation" },
+  Pending: { id: "Menunggu", en: "Pending" },
+  Approved: { id: "Disetujui", en: "Approved" },
+  Rejected: { id: "Ditolak", en: "Rejected" },
+  "Paid in Payroll": { id: "Dibayar di Payroll", en: "Paid in Payroll" },
+  Signed: { id: "Ditandatangani", en: "Signed" },
+  "Awaiting Signature": { id: "Menunggu TTD", en: "Awaiting Signature" },
+  "Expiring Soon": { id: "Segera Berakhir", en: "Expiring Soon" },
+  Draft: { id: "Draf", en: "Draft" },
+  Assigned: { id: "Dipinjamkan", en: "Assigned" },
+  "In Stock": { id: "Tersedia di Gudang", en: "In Stock" },
+  "Pending Return": { id: "Menunggu Kembali", en: "Pending Return" },
+  "On Time": { id: "Tepat Waktu", en: "On Time" },
+  Late: { id: "Terlambat", en: "Late" },
+  Remote: { id: "Remote", en: "Remote" },
+  Completed: { id: "Selesai", en: "Completed" },
+  Applied: { id: "Melamar", en: "Applied" },
+  Invited: { id: "Diundang Tes", en: "Invited" },
+  Testing: { id: "Sedang Tes", en: "Testing" },
+  Interview: { id: "Wawancara", en: "Interview" },
+  Offer: { id: "Offering", en: "Offer" },
+  Hired: { id: "Direkrut", en: "Hired" },
+  Exceeded: { id: "Melampaui Target", en: "Exceeded" },
+  "On Track": { id: "Sesuai Target", en: "On Track" },
+  "At Risk": { id: "Berisiko", en: "At Risk" },
+  "Annual Leave": { id: "Cuti Tahunan", en: "Annual Leave" },
+  "Sick Leave": { id: "Cuti Sakit", en: "Sick Leave" },
+  "Remote WFA": { id: "Kerja Remote (WFA)", en: "Remote WFA" },
+  "Parental Leave": { id: "Cuti Melahirkan/Ayah", en: "Parental Leave" },
+  Emergency: { id: "Izin Darurat", en: "Emergency" },
+  "Full-Time": { id: "Karyawan Tetap", en: "Full-Time" },
+  "Remote Global": { id: "Remote Global", en: "Remote Global" },
+  Contract: { id: "Kontrak PKWT", en: "Contract" },
+  Executive: { id: "Eksekutif", en: "Executive" },
+};
+
+export function tStatus(status: string, locale: Locale): string {
+  return STATUS_MAP[status]?.[locale] || status;
+}
+
+export function getLocalizedSeedNotifications(locale: Locale): HRNotification[] {
+  const isId = locale === "id";
+  return [
+    {
+      id: "ntf-1",
+      title: isId ? "Persetujuan Cuti Menunggu (2)" : "Pending Leave Approvals (2)",
+      message: isId
+        ? "Raka Pradipta (3h Cuti Tahunan) & Lukas Weber (5h WFA) menunggu persetujuan."
+        : "Raka Pradipta (3d Annual Leave) & Lukas Weber (5d WFA) are awaiting review.",
+      category: "approval",
+      read: false,
+      createdAt: "2026-11-24T08:15:00Z",
+      href: "/attendance",
+    },
+    {
+      id: "ntf-2",
+      title: isId ? "Klaim Reimburse Siap Sync Payroll" : "Expense Claims Ready for Payroll",
+      message: isId
+        ? "2 klaim reimbursement baru dari Engineering menunggu verifikasi keuangan."
+        : "2 new reimbursement claims from Engineering are awaiting finance verification.",
+      category: "approval",
+      read: false,
+      createdAt: "2026-11-24T07:50:00Z",
+      href: "/finance-ops",
+    },
+    {
+      id: "ntf-3",
+      title: isId ? "Radar Kontrak PKWT & E-Signature" : "Contract Expiry & E-Sign Radar",
+      message: isId
+        ? "Kontrak Bima Sakti berakhir 12 Des & Offer Aurelia menunggu tanda tangan."
+        : "Bima Sakti's contract expires Dec 12 & Aurelia's offer awaits e-signature.",
+      category: "approval",
+      read: false,
+      createdAt: "2026-11-24T07:10:00Z",
+      href: "/documents",
+    },
+    {
+      id: "ntf-4",
+      title: isId ? "Kandidat High-IQ Selesai Psikotes" : "High-IQ Candidate Completed Test",
+      message: isId
+        ? "Dimas Arya Mahendra meraih IQ 136 (persentil 99) — otomatis lanjut ke Wawancara."
+        : "Dimas Arya Mahendra scored IQ 136 (99th pct) — auto-promoted to Interview.",
+      category: "assessment",
+      read: false,
+      createdAt: "2026-11-23T15:42:00Z",
+      href: "/assessments",
+    },
+    {
+      id: "ntf-5",
+      title: isId ? "RBAC Zero-Trust & Audit Ledger Aktif" : "Zero-Trust RBAC & Audit Ledger Active",
+      message: isId
+        ? "5 Role Enterprise + rantai kriptografi Audit Log SHA-256 aktif memantau seluruh modul."
+        : "5 Enterprise Roles + SHA-256 cryptographic Audit Trail actively guard all modules.",
+      category: "security",
+      read: false,
+      createdAt: "2026-11-24T09:00:00Z",
+      href: "/audit-logs",
+    },
+  ];
+}
 
 export const translations = {
   id: {
-    brandSubtitle: "Enterprise People OS",
+    brandSubtitle: "Sistem Operasi SDM Global",
     groups: {
       overview: "Ringkasan",
       coreHr: "SDM & Dokumen",
       timePay: "Waktu, Gaji & Aset",
       talent: "Talenta & Psikotes",
-      platform: "Otomatisasi & Mobile",
+      platform: "Otomatisasi & Keamanan",
     },
     nav: {
       dashboard: "Dashboard HRIS",
-      employees: "Karyawan & Org",
+      employees: "Karyawan & Struktur",
       documents: "Kontrak & E-Sign",
       learning: "Onboarding & LMS",
       attendance: "Absensi & Shift",
       payroll: "Payroll & PPh 21",
-      financeOps: "Reimburse & Aset",
+      financeOps: "Reimburse & Aset IT",
       recruitment: "Rekrutmen & ATS",
       assessments: "Psikotes & IQ",
-      performance: "OKR & 9-Box",
+      performance: "OKR & Talenta 9-Box",
       automation: "Otomatisasi & API",
       auditLogs: "Audit Log & RBAC",
-      mobile: "Mobile App PWA",
+      mobile: "Aplikasi Mobile",
       settings: "Pengaturan",
     },
     topbar: {
       searchPlaceholder: "Cari karyawan, kandidat, slip gaji, kontrak... (Ctrl+K)",
       quickInvite: "Undang Psikotes",
-      liveStatus: "Automation Aktif",
-      installApp: "Mobile App",
+      liveStatus: "Otomatisasi Aktif",
+      installApp: "Aplikasi Mobile",
+      currencyTitle: "Mata Uang Tampilan Global",
     },
     common: {
       save: "Simpan",
       cancel: "Batal",
       send: "Kirim",
-      exportCsv: "Export CSV",
-      print: "Cetak / PDF",
-      copyLink: "Salin Link",
+      exportCsv: "Unduh CSV",
+      print: "Cetak / Simpan PDF",
+      copyLink: "Salin Tautan",
       copied: "Tersalin!",
       active: "Aktif",
       pending: "Menunggu",
@@ -51,28 +169,33 @@ export const translations = {
       minutes: "Menit",
       questions: "Soal",
       all: "Semua",
+      close: "Tutup",
+      employee: "Karyawan",
+      department: "Divisi",
+      status: "Status",
+      action: "Aksi",
     },
     dashboard: {
-      title: "Executive HRIS Overview",
-      subtitle: "Kelola karyawan lintas negara, persetujuan harian, payroll otomatis, kontrak E-Sign, dan psikotes kognitif dalam satu sistem terpadu.",
+      title: "Ringkasan Eksekutif HRIS",
+      subtitle: "Kelola karyawan lintas negara, persetujuan harian, payroll multi-mata uang, kontrak E-Sign, dan psikotes kognitif secara terpadu.",
       totalHeadcount: "Total Karyawan Aktif",
       activeAutomations: "Workflow Aktif",
       avgCognitiveIq: "Rata-rata IQ Kandidat",
-      monthlyPayroll: "Total Payroll Bulanan",
+      monthlyPayroll: "Estimasi Payroll Bulanan",
       attendanceRate: "Tingkat Kehadiran",
       launchPsychometric: "Mulai Tes Psikotes",
       inviteCandidate: "Undang WA & Email",
-      runPayroll: "Jalankan Payroll",
-      openMobile: "Mobile App",
+      runPayroll: "Kelola Payroll",
+      openMobile: "Aplikasi Mobile",
     },
     assessment: {
-      title: "International Cognitive & Psychometric Suite",
-      subtitle: "104 soal terkalibrasi di 8 baterai kognitif & psikometrik lengkap dengan timer presisi, anti-cheat proctoring, dan laporan skor IQ + OCEAN + DISC otomatis.",
+      title: "Suite Tes Kognitif & Psikotes Internasional",
+      subtitle: "104 soal terkalibrasi di 8 baterai kognitif & psikometrik dengan timer presisi, pengawasan anti-curang, dan laporan skor IQ + OCEAN + DISC otomatis.",
       startDemo: "Uji Coba Tes Langsung",
       sendInvite: "Kirim Undangan Email / WA",
       totalBank: "Total Bank Soal",
       batteries: "Baterai Asesmen",
-      proctoringActive: "Anti-Cheat Proctoring Aktif",
+      proctoringActive: "Pengawasan Anti-Curang Aktif",
       timeRemaining: "Sisa Waktu",
       nextQuestion: "Soal Berikutnya",
       prevQuestion: "Sebelumnya",
@@ -87,7 +210,7 @@ export const translations = {
       coreHr: "People & Docs",
       timePay: "Time, Pay & Assets",
       talent: "Talent & Psychometrics",
-      platform: "Automation & Mobile",
+      platform: "Automation & Security",
     },
     nav: {
       dashboard: "HRIS Dashboard",
@@ -110,13 +233,14 @@ export const translations = {
       quickInvite: "Invite to Test",
       liveStatus: "Automation Live",
       installApp: "Mobile App",
+      currencyTitle: "Global Display Currency",
     },
     common: {
       save: "Save",
       cancel: "Cancel",
       send: "Send",
       exportCsv: "Export CSV",
-      print: "Print / PDF",
+      print: "Print / Save PDF",
       copyLink: "Copy Link",
       copied: "Copied!",
       active: "Active",
@@ -130,6 +254,11 @@ export const translations = {
       minutes: "Minutes",
       questions: "Questions",
       all: "All",
+      close: "Close",
+      employee: "Employee",
+      department: "Department",
+      status: "Status",
+      action: "Action",
     },
     dashboard: {
       title: "Executive HRIS Overview",
@@ -141,7 +270,7 @@ export const translations = {
       attendanceRate: "Attendance Rate",
       launchPsychometric: "Launch Psychometric Test",
       inviteCandidate: "Invite WA & Email",
-      runPayroll: "Run Payroll",
+      runPayroll: "Manage Payroll",
       openMobile: "Mobile App",
     },
     assessment: {

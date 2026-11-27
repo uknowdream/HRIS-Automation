@@ -15,10 +15,11 @@ import {
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
 import { RBACGuard } from "@/components/security/RBACGuard";
-import type { IntegrationSettings } from "@/types/hris";
+import { ALL_CURRENCIES } from "@/lib/currency";
+import type { Currency, IntegrationSettings } from "@/types/hris";
 
 export default function SettingsPage() {
-  const { locale, settings, updateSettings, resetDemoData } = useHRIS();
+  const { locale, displayCurrency, setDisplayCurrency, settings, updateSettings, resetDemoData } = useHRIS();
   const isId = locale === "id";
 
   const [form, setForm] = useState<IntegrationSettings>(settings);
@@ -75,9 +76,11 @@ export default function SettingsPage() {
               <Bot className="w-4 h-4" />
               {isId ? "Identitas Perusahaan & Kebijakan Auto-Pilot Otonom" : "Organization Profile & Autonomous Auto-Pilot Rules"}
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5 text-xs">
               <div>
-                <label className="block hr-muted font-semibold mb-1">Company Name</label>
+                <label className="block hr-muted font-semibold mb-1">
+                  {isId ? "Nama Perusahaan" : "Company Name"}
+                </label>
                 <input
                   value={form.companyName}
                   onChange={(e) => setForm({ ...form, companyName: e.target.value })}
@@ -85,7 +88,9 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block hr-muted font-semibold mb-1">Primary Domain</label>
+                <label className="block hr-muted font-semibold mb-1">
+                  {isId ? "Domain Utama" : "Primary Domain"}
+                </label>
                 <input
                   value={form.companyDomain}
                   onChange={(e) => setForm({ ...form, companyDomain: e.target.value })}
@@ -93,7 +98,29 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block hr-muted font-semibold mb-1">Auto-Advance IQ Threshold</label>
+                <label className="block hr-muted font-semibold mb-1">
+                  {isId ? "Mata Uang Default" : "Default Currency"}
+                </label>
+                <select
+                  value={displayCurrency}
+                  onChange={(e) => {
+                    const c = e.target.value as Currency;
+                    setDisplayCurrency(c);
+                    setForm({ ...form, defaultCurrency: c });
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl hr-input font-mono font-bold"
+                >
+                  {ALL_CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block hr-muted font-semibold mb-1">
+                  {isId ? "Batas IQ Auto-Lanjut" : "Auto-Advance IQ"}
+                </label>
                 <input
                   type="number"
                   value={form.autoAdvanceThresholdIq}
@@ -104,7 +131,9 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block hr-muted font-semibold mb-1">Auto-Approve Expense Limit (USD)</label>
+                <label className="block hr-muted font-semibold mb-1">
+                  {isId ? "Batas Auto-Reimburse (USD)" : "Auto-Expense Limit (USD)"}
+                </label>
                 <input
                   type="number"
                   value={form.microExpenseLimitUSD}

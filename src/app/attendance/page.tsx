@@ -16,6 +16,7 @@ import {
   Lock,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
+import { tRole, tStatus } from "@/lib/i18n";
 import type { LeaveRequest } from "@/types/hris";
 
 export default function AttendancePage() {
@@ -281,11 +282,11 @@ export default function AttendancePage() {
               onChange={(e) => setLeaveType(e.target.value as LeaveRequest["type"])}
               className="px-3 py-2 rounded-xl hr-input text-xs font-semibold"
             >
-              <option value="Annual Leave">Annual Leave</option>
-              <option value="Remote WFA">Remote WFA</option>
-              <option value="Sick Leave">Sick Leave</option>
-              <option value="Parental Leave">Parental Leave</option>
-              <option value="Emergency">Emergency</option>
+              <option value="Annual Leave">{tStatus("Annual Leave", locale)}</option>
+              <option value="Remote WFA">{tStatus("Remote WFA", locale)}</option>
+              <option value="Sick Leave">{tStatus("Sick Leave", locale)}</option>
+              <option value="Parental Leave">{tStatus("Parental Leave", locale)}</option>
+              <option value="Emergency">{tStatus("Emergency", locale)}</option>
             </select>
             <input
               type="date"
@@ -332,12 +333,12 @@ export default function AttendancePage() {
         <table className="w-full text-left text-xs min-w-[680px]">
           <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
             <tr>
-              <th className="py-2.5 px-3">Employee</th>
-              <th className="py-2.5 px-3">Clock In / Out</th>
-              <th className="py-2.5 px-3">GPS Location</th>
-              <th className="py-2.5 px-3">Device</th>
+              <th className="py-2.5 px-3">{isId ? "Karyawan" : "Employee"}</th>
+              <th className="py-2.5 px-3">{isId ? "Jam Masuk / Pulang" : "Clock In / Out"}</th>
+              <th className="py-2.5 px-3">{isId ? "Lokasi GPS" : "GPS Location"}</th>
+              <th className="py-2.5 px-3">{isId ? "Perangkat" : "Device"}</th>
               <th className="py-2.5 px-3">Status</th>
-              <th className="py-2.5 px-3 text-right">Action</th>
+              <th className="py-2.5 px-3 text-right">{isId ? "Aksi" : "Action"}</th>
             </tr>
           </thead>
           <tbody className="divide-y" style={{ borderColor: "var(--border-subtle)" }}>
@@ -413,8 +414,11 @@ export default function AttendancePage() {
         <table className="w-full text-left text-xs min-w-[680px]">
           <thead className="hr-muted border-b" style={{ borderColor: "var(--border-subtle)" }}>
             <tr>
-              <th className="py-2 px-3">Employee</th>
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+              <th className="py-2 px-3">{isId ? "Karyawan" : "Employee"}</th>
+              {(isId
+                ? ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]
+                : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+              ).map((d) => (
                 <th key={d} className="py-2 px-2 text-center">{d}</th>
               ))}
             </tr>

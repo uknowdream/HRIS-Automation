@@ -24,13 +24,15 @@ import {
   UserCheck,
 } from "lucide-react";
 import { useHRIS } from "@/context/HRISContext";
-import { getDict } from "@/lib/i18n";
+import { getDict, tRole, tStatus } from "@/lib/i18n";
 import { AreaTrendChart } from "@/components/visuals/Charts";
 import { calculateEmployeePayslip, formatCurrency, FX_TO_USD } from "@/lib/payroll-engine";
+import { convertCurrency, formatCompactConverted, formatConverted } from "@/lib/currency";
 
 export default function ExecutiveDashboardPage() {
   const {
     locale,
+    displayCurrency,
     activeRole,
     selectedEntity,
     authUser,
@@ -55,7 +57,6 @@ export default function ExecutiveDashboardPage() {
   const isId = locale === "id";
   const [inboxTab, setInboxTab] = useState<"all" | "leave" | "expense" | "contract">("all");
 
-  // Filter employees by active Multi-Entity Workspace Switcher
   const scopedEmployees = useMemo(() => {
     if (selectedEntity === "ALL") return employees;
     if (selectedEntity === "Europe") {
@@ -107,12 +108,17 @@ export default function ExecutiveDashboardPage() {
     }, {})
   ).sort((a, b) => b[1] - a[1]);
 
+  const microLimitFormatted = formatCurrency(
+    convertCurrency(settings.microExpenseLimitUSD, "USD", displayCurrency),
+    displayCurrency
+  );
+
   const metrics = isEss
     ? [
         {
           label: isId ? "Estimasi Gaji Bersih Saya" : "My Net Take-Home Pay",
-          value: formatCurrency(myPayslip.netSalary, myPayslip.currency),
-          delta: myPayslip.taxRateLabel.split(" ")[0],
+          value: formatConverted(myPayslip.netSalary, myPayslip.currency, displayCurrency),
+          delta: displayCurrency,
           deltaTone: "badge-success",
           footnote: `${currentEmployee.employeeCode} · ${currentEmployee.department}`,
           icon: Wallet,
@@ -122,7 +128,7 @@ export default function ExecutiveDashboardPage() {
         {
           label: isId ? "Kehadiran Pribadi Saya" : "My Attendance Rate",
           value: `${currentEmployee.attendanceRate}%`,
-          delta: "Geofence OK",
+          delta: isId ? "GPS Aktif" : "GPS Verified",
           deltaTone: "badge-info",
           footnote: currentEmployee.location,
           icon: Clock,
@@ -132,7 +138,7 @@ export default function ExecutiveDashboardPage() {
         {
           label: isId ? "Pengajuan Cuti & WFA Saya" : "My Leave & WFA Requests",
           value: `${pendingLeaves.length}`,
-          delta: "12d Quota",
+          delta: isId ? "Kuota 12h" : "12d Quota",
           deltaTone: "badge-warning",
           footnote: isId ? "Auto-Pilot WFA Aktif" : "Auto-Pilot WFA Enabled",
           icon: Calendar,
@@ -166,19 +172,25 @@ export default function ExecutiveDashboardPage() {
         },
         {
           label: hasPermission("payroll:view_all")
-            ? dict.dashboard.monthlyPayroll
+            ? `${dict.dashboard.monthlyPayroll} (${displayCurrency})`
             : isId
-            ? "Otomatisasi Aktif"
+            ? "Workflow Otomatis Aktif"
             : "Active Workflows",
           value: hasPermission("payroll:view_all")
-            ? `$${(scopedPayrollUsd / 1000).toFixed(1)}K`
+            ? formatCompactConverted(scopedPayrollUsd, displayCurrency, locale)
             : `${activeFlows}/${workflows.length}`,
-          delta: hasPermission("payroll:view_all") ? "Nov 25" : "99.9% SLA",
+          delta: hasPermission("payroll:view_all")
+            ? isId
+              ? "25 Nov"
+              : "Nov 25"
+            : "99.9% SLA",
           deltaTone: "badge-info",
           footnote: hasPermission("payroll:view_all")
             ? isId
-              ? "PPh 21 TER + BPJS + Reimburse"
-              : "Auto-Tax & Reimburse Synced"
+              ? `Tersinkron ke ${displayCurrency} · Pajak & Reimburse`
+              : `Synced in ${displayCurrency} · Tax & Expenses`
+            : isId
+            ? "Nominal Payroll Dilindungi RBAC"
             : "Confidential Payroll Masked by RBAC",
           icon: Wallet,
           iconTone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
@@ -187,7 +199,7 @@ export default function ExecutiveDashboardPage() {
         {
           label: dict.dashboard.attendanceRate,
           value: `${avgAttendance}%`,
-          delta: `${attendance.length}/${employees.length} In`,
+          delta: `${attendance.length}/${employees.length} ${isId ? "Hadir" : "In"}`,
           deltaTone: "badge-success",
           footnote: isId ? "GPS Geofence & Shift Aktif" : "GPS Geofence & Active Roster",
           icon: Clock,
@@ -201,10 +213,16 @@ export default function ExecutiveDashboardPage() {
             ? "Blok Audit Keamanan"
             : "SHA-256 Audit Blocks",
           value: hasPermission("assessments:manage") ? `${avgIq}` : `${auditLogs.length}`,
-          delta: hasPermission("assessments:manage") ? "104 Soal" : "Zero-Trust",
+          delta: hasPermission("assessments:manage")
+            ? isId
+              ? "104 Soal"
+              : "104 Items"
+            : "Zero-Trust",
           deltaTone: "badge-warning",
           footnote: hasPermission("assessments:manage")
             ? `${reports.length} ${isId ? "Laporan Psikotes" : "Verified Reports"}`
+            : isId
+            ? "Jejak Kepatuhan Kriptografi"
             : "Immutable Compliance Trail",
           icon: hasPermission("assessments:manage") ? BrainCircuit : ShieldCheck,
           iconTone: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400",
@@ -213,33 +231,54 @@ export default function ExecutiveDashboardPage() {
       ];
 
   const celebrations = [
-    { name: "Nadia Kusuma", event: isId ? "Work Anniversary ke-4" : "4th Work Anniversary", date: "28 Nov", initials: "NK" },
-    { name: "Raka Pradipta", event: isId ? "Ulang Tahun" : "Birthday", date: "02 Dec", initials: "RP" },
-    { name: "Bima Sakti Nugroho", event: isId ? "Selesai Onboarding 30 Hari" : "30-Day Onboarding Done", date: "02 Dec", initials: "BN" },
+    {
+      name: "Nadia Kusuma",
+      event: isId ? "Ulang Tahun Kerja ke-4" : "4th Work Anniversary",
+      date: "28 Nov",
+      initials: "NK",
+    },
+    {
+      name: "Raka Pradipta",
+      event: isId ? "Hari Ulang Tahun" : "Birthday",
+      date: isId ? "02 Des" : "02 Dec",
+      initials: "RP",
+    },
+    {
+      name: "Bima Sakti Nugroho",
+      event: isId ? "Lulus Onboarding 30 Hari" : "30-Day Onboarding Done",
+      date: isId ? "02 Des" : "02 Dec",
+      initials: "BN",
+    },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Clean Quiet-Chrome Executive Page Header (Deel / Rippling / Linear Standard) */}
+      {/* Clean Quiet-Chrome Executive Page Header */}
       <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-2 border-b border-slate-200/80 dark:border-slate-800/80">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span>{isId ? "Selasa, 24 November 2026" : "Tuesday, November 24, 2026"}</span>
+            <span>{authUser.companyName}</span>
             <span>·</span>
             <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 dark:text-emerald-400">
-              <ShieldCheck className="w-3.5 h-3.5" /> {activeRole}
+              <ShieldCheck className="w-3.5 h-3.5" /> {tRole(activeRole, locale)}
+            </span>
+            <span>·</span>
+            <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+              {displayCurrency}
             </span>
             {selectedEntity !== "ALL" && (
               <>
                 <span>·</span>
                 <span className="badge-info px-2 py-0.5 rounded-full text-[10px] font-bold">
-                  Entity: {selectedEntity}
+                  {selectedEntity}
                 </span>
               </>
             )}
           </div>
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-            {isId ? `Selamat Datang, ${authUser.name.split(" ")[0]}` : `Good morning, ${authUser.name.split(" ")[0]}`}
+            {isId
+              ? `Selamat Datang, ${authUser.name.split(" ")[0]}`
+              : `Good morning, ${authUser.name.split(" ")[0]}`}
           </h1>
         </div>
 
@@ -258,7 +297,11 @@ export default function ExecutiveDashboardPage() {
             className="hr-btn-secondary px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
           >
             <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-            {isEss ? (isId ? "Slip Gaji Saya" : "My Payslip") : dict.dashboard.runPayroll}
+            {!hasPermission("payroll:view_all")
+              ? isId
+                ? "Slip Gaji Saya"
+                : "My Payslip"
+              : dict.dashboard.runPayroll}
           </Link>
           {hasPermission("assessments:manage") && (
             <Link
@@ -271,6 +314,7 @@ export default function ExecutiveDashboardPage() {
           )}
           {hasPermission("assessments:manage") && (
             <button
+              type="button"
               onClick={() => openInviteModal()}
               className="btn-quantum px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5"
             >
@@ -300,7 +344,7 @@ export default function ExecutiveDashboardPage() {
                 </div>
               </div>
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-2xl font-extrabold tracking-tight tabular-nums">
+                <span className="text-xl sm:text-2xl font-extrabold tracking-tight tabular-nums truncate">
                   {m.value}
                 </span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${m.deltaTone}`}>
@@ -317,7 +361,6 @@ export default function ExecutiveDashboardPage() {
 
       {/* Row 2: Action-First HRIS Workspace (8 cols) + Operations Rail (4 cols) */}
       <section className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
-        {/* Left 8 Cols: Tabbed Priority Action Center + Analytics */}
         <div className="xl:col-span-8 space-y-5">
           {/* Tabbed HR Action Center */}
           <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl overflow-hidden">
@@ -325,10 +368,20 @@ export default function ExecutiveDashboardPage() {
               <div>
                 <h2 className="text-sm font-extrabold flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  {isId ? "Antrean Persetujuan & Tindakan HR" : "Priority Approvals & Action Queue"}
+                  {isEss
+                    ? isId
+                      ? "Status Pengajuan & Dokumen Pribadi Saya"
+                      : "My Personal Requests & Contracts"
+                    : isId
+                    ? "Antrean Persetujuan & Tindakan HR"
+                    : "Priority Approvals & Action Queue"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  {isId
+                  {isEss
+                    ? isId
+                      ? "Pantau status cuti, klaim reimburse, dan kontrak E-Sign milik Anda sendiri."
+                      : "Track your own leave requests, expense claims, and pending e-signatures."
+                    : isId
                     ? "Selesaikan persetujuan cuti, klaim reimburse, dan kontrak E-Sign langsung dari sini."
                     : "Resolve pending leaves, payroll-synced expenses, and e-sign contracts inline."}
                 </p>
@@ -338,12 +391,13 @@ export default function ExecutiveDashboardPage() {
                   [
                     { id: "all", label: `${isId ? "Semua" : "All"} (${totalPending})` },
                     { id: "leave", label: `${isId ? "Cuti" : "Leave"} (${pendingLeaves.length})` },
-                    { id: "expense", label: `Reimburse (${pendingExpenses.length})` },
+                    { id: "expense", label: `${isId ? "Reimburse" : "Expense"} (${pendingExpenses.length})` },
                     { id: "contract", label: `E-Sign (${actionDocs.length})` },
                   ] as const
                 ).map((t) => (
                   <button
                     key={t.id}
+                    type="button"
                     onClick={() => setInboxTab(t.id)}
                     className={`px-2.5 py-1 rounded-md font-semibold transition whitespace-nowrap ${
                       inboxTab === t.id
@@ -370,23 +424,28 @@ export default function ExecutiveDashboardPage() {
                       </div>
                       <div>
                         <div className="text-xs font-bold">
-                          {lv.employeeName} · <span className="text-indigo-600 dark:text-indigo-400">{lv.type}</span>
+                          {lv.employeeName} ·{" "}
+                          <span className="text-indigo-600 dark:text-indigo-400">
+                            {tStatus(lv.type, locale)}
+                          </span>
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {lv.days}d ({lv.startDate} → {lv.endDate}) · {lv.reason}
+                          {lv.days} {isId ? "hari" : "days"} ({lv.startDate} → {lv.endDate}) · {lv.reason}
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {hasPermission("attendance:approve") ? (
+                      {hasPermission("attendance:approve") && lv.status === "Pending" ? (
                         <>
                           <button
+                            type="button"
                             onClick={() => decideLeaveRequest(lv.id, "Approved")}
                             className="btn-emerald px-3 py-1.5 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1"
                           >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                            <CheckCircle2 className="w-3.5 h-3.5" /> {dict.common.approve}
                           </button>
                           <button
+                            type="button"
                             onClick={() => decideLeaveRequest(lv.id, "Rejected")}
                             className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
                             aria-label="Reject leave"
@@ -396,7 +455,7 @@ export default function ExecutiveDashboardPage() {
                         </>
                       ) : (
                         <span className="badge-warning px-2.5 py-1 rounded-full text-[10px] font-bold">
-                          {lv.status}
+                          {tStatus(lv.status, locale)}
                         </span>
                       )}
                     </div>
@@ -417,7 +476,7 @@ export default function ExecutiveDashboardPage() {
                         <div className="text-xs font-bold">
                           {ex.employeeName} · {ex.category}{" "}
                           <span className="font-mono text-emerald-700 dark:text-emerald-400">
-                            ({formatCurrency(ex.amount, ex.currency)})
+                            ({formatConverted(ex.amount, ex.currency, displayCurrency)})
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
@@ -426,15 +485,17 @@ export default function ExecutiveDashboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {hasPermission("expenses:approve") ? (
+                      {hasPermission("expenses:approve") && ex.status === "Pending" ? (
                         <>
                           <button
+                            type="button"
                             onClick={() => decideExpenseClaim(ex.id, "Approved")}
                             className="btn-quantum px-3 py-1.5 rounded-lg text-[11px] font-semibold"
                           >
-                            Approve & Sync
+                            {isId ? "Setujui & Sync" : "Approve & Sync"}
                           </button>
                           <button
+                            type="button"
                             onClick={() => decideExpenseClaim(ex.id, "Rejected")}
                             className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold badge-danger"
                             aria-label="Reject expense"
@@ -444,7 +505,7 @@ export default function ExecutiveDashboardPage() {
                         </>
                       ) : (
                         <span className="badge-info px-2.5 py-1 rounded-full text-[10px] font-bold">
-                          {ex.status}
+                          {tStatus(ex.status, locale)}
                         </span>
                       )}
                     </div>
@@ -464,7 +525,9 @@ export default function ExecutiveDashboardPage() {
                       <div>
                         <div className="text-xs font-bold">
                           {doc.employeeName} ·{" "}
-                          <span className="text-amber-700 dark:text-amber-400">{doc.status}</span>
+                          <span className="text-amber-700 dark:text-amber-400">
+                            {tStatus(doc.status, locale)}
+                          </span>
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">{doc.title}</div>
                       </div>
@@ -473,14 +536,17 @@ export default function ExecutiveDashboardPage() {
                       href="/documents"
                       className="hr-btn-secondary px-3 py-1.5 rounded-lg text-[11px] font-semibold shrink-0"
                     >
-                      Open E-Sign →
+                      {isId ? "Buka E-Sign →" : "Open E-Sign →"}
                     </Link>
                   </div>
                 ))}
 
               {totalPending === 0 && (
                 <div className="py-10 text-center text-xs text-slate-500">
-                  🎉 {isId ? "Semua antrean persetujuan HR hari ini telah terselesaikan." : "All pending HR approvals are complete."}
+                  🎉{" "}
+                  {isId
+                    ? "Seluruh antrean persetujuan telah terselesaikan."
+                    : "All pending approvals are complete."}
                 </div>
               )}
             </div>
@@ -492,21 +558,28 @@ export default function ExecutiveDashboardPage() {
               <div>
                 <h2 className="text-sm font-extrabold flex items-center gap-2">
                   <Activity className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  {isId ? "Kecepatan Otomatisasi HR & Penyelesaian Psikotes" : "HR Automation & Psychometric Velocity"}
+                  {isId
+                    ? "Tren Otomatisasi HR & Penyelesaian Psikotes"
+                    : "HR Automation & Psychometric Velocity"}
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {activeFlows}/{workflows.length} active flows · Email, WhatsApp & HMAC-SHA256 Webhooks
+                  {isId
+                    ? `${activeFlows}/${workflows.length} alur aktif · Email, WhatsApp & Webhook HMAC-SHA256`
+                    : `${activeFlows}/${workflows.length} active flows · Email, WhatsApp & HMAC-SHA256 Webhooks`}
                 </p>
               </div>
-              <Link
-                href="/automation"
-                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-              >
-                Automation Studio <ArrowUpRight className="w-3.5 h-3.5" />
-              </Link>
+              {hasPermission("automation:manage") && (
+                <Link
+                  href="/automation"
+                  className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                >
+                  {isId ? "Studio Otomatisasi" : "Automation Studio"}{" "}
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
             </div>
             <AreaTrendChart
-              labels={["May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"]}
+              labels={isId ? ["Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov"] : ["May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"]}
               seriesA={[140, 185, 220, 260, 295, 340, 392]}
               seriesB={[38, 52, 64, 79, 95, 118, 146]}
               labelA={isId ? "Eksekusi Otomatisasi (Email/WA/Webhook)" : "Automated Workflows"}
@@ -515,7 +588,7 @@ export default function ExecutiveDashboardPage() {
           </div>
         </div>
 
-        {/* Right 4 Cols: Security Audit Pulse, Payroll Countdown, Dept Breakdown, Milestones */}
+        {/* Right 4 Cols: Role-Scoped Cards */}
         <div className="xl:col-span-4 space-y-5">
           {/* Live Role-Scoped Security & Auto-Pilot Pulse */}
           {hasPermission("audit:view") && (
@@ -534,10 +607,10 @@ export default function ExecutiveDashboardPage() {
               </div>
               <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
                 <span className={settings.autoApproveShortLeave ? "badge-success px-2 py-0.5 rounded-full" : "hr-subtle px-2 py-0.5 rounded-full"}>
-                  Auto-WFA/Leave: {settings.autoApproveShortLeave ? "ON" : "OFF"}
+                  {isId ? "Auto-Cuti/WFA" : "Auto-WFA/Leave"}: {settings.autoApproveShortLeave ? (isId ? "AKTIF" : "ON") : "OFF"}
                 </span>
                 <span className={settings.autoApproveMicroExpense ? "badge-success px-2 py-0.5 rounded-full" : "hr-subtle px-2 py-0.5 rounded-full"}>
-                  Micro-Expense ≤${settings.microExpenseLimitUSD}: {settings.autoApproveMicroExpense ? "ON" : "OFF"}
+                  {isId ? "Klaim Mikro" : "Micro-Claim"} ≤{microLimitFormatted}: {settings.autoApproveMicroExpense ? (isId ? "AKTIF" : "ON") : "OFF"}
                 </span>
               </div>
               <div className="space-y-2 pt-1">
@@ -546,7 +619,7 @@ export default function ExecutiveDashboardPage() {
                     <div className="min-w-0">
                       <div className="font-bold truncate">{a.action}</div>
                       <div className="text-slate-500 truncate">
-                        {a.actorName} ({a.actorRole})
+                        {a.actorName} ({tRole(a.actorRole, locale)})
                       </div>
                     </div>
                     <span className="font-mono text-[10px] text-slate-400 shrink-0">
@@ -557,48 +630,53 @@ export default function ExecutiveDashboardPage() {
               </div>
             </div>
           )}
-          {/* Payroll Readiness Card */}
-          <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3.5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-extrabold flex items-center gap-2">
-                <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                {isId ? "Kesiapan Payroll Nov 2026" : "Nov 2026 Payroll Cycle"}
-              </h2>
-              <span className="badge-success px-2 py-0.5 rounded-full text-[10px] font-bold">On Track</span>
+
+          {/* Payroll Readiness Card (ONLY shown to roles permitted to view company payroll!) */}
+          {hasPermission("payroll:view_all") && (
+            <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3.5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-extrabold flex items-center gap-2">
+                  <CalendarClock className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  {isId ? "Siklus Payroll Nov 2026" : "Nov 2026 Payroll Cycle"}
+                </h2>
+                <span className="badge-success px-2 py-0.5 rounded-full text-[10px] font-bold">
+                  {isId ? "Siap" : "On Track"}
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                {[
+                  { label: isId ? "Sinkronisasi Absensi & Shift GPS" : "GPS Attendance & Shift Sync", done: true },
+                  { label: isId ? "Penggabungan Reimburse Disetujui" : "Approved Reimbursements Merged", done: true },
+                  { label: isId ? "Pencairan Bank API (25 Nov)" : "Bank API Disbursement (Nov 25)", done: false },
+                ].map((step) => (
+                  <div key={step.label} className="flex items-center justify-between py-1">
+                    <span className={step.done ? "text-slate-700 dark:text-slate-300" : "text-slate-500"}>
+                      {step.label}
+                    </span>
+                    <span className={`text-[10px] font-bold ${step.done ? "text-emerald-600" : "text-amber-600"}`}>
+                      {step.done ? (isId ? "✓ Siap" : "✓ Ready") : isId ? "Terjadwal" : "Scheduled"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/payroll"
+                className="block w-full text-center py-2 rounded-lg hr-btn-secondary text-xs font-semibold"
+              >
+                {isId ? "Tinjau & Jalankan Payroll →" : "Review Payroll Run →"}
+              </Link>
             </div>
-            <div className="space-y-2 text-xs">
-              {[
-                { label: isId ? "Sinkronisasi Absensi & Shift GPS" : "GPS Attendance & Shift Sync", done: true },
-                { label: isId ? "Penggabungan Reimburse Disetujui" : "Approved Reimbursements Merged", done: true },
-                { label: isId ? "Pencairan Bank API (25 Nov)" : "Bank API Disbursement (Nov 25)", done: false },
-              ].map((step) => (
-                <div key={step.label} className="flex items-center justify-between py-1">
-                  <span className={step.done ? "text-slate-700 dark:text-slate-300" : "text-slate-500"}>
-                    {step.label}
-                  </span>
-                  <span className={`text-[10px] font-bold ${step.done ? "text-emerald-600" : "text-amber-600"}`}>
-                    {step.done ? "✓ Ready" : "Scheduled"}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <Link
-              href="/payroll"
-              className="block w-full text-center py-2 rounded-lg hr-btn-secondary text-xs font-semibold"
-            >
-              {isId ? "Review & Jalankan Payroll →" : "Review Payroll Run →"}
-            </Link>
-          </div>
+          )}
 
           {/* Department Headcount */}
           <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-extrabold flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-emerald-600" />
-                {isId ? "Headcount per Divisi" : "Headcount by Dept"}
+                {isId ? "Jumlah Karyawan per Divisi" : "Headcount by Dept"}
               </h2>
               <Link href="/employees" className="text-xs font-semibold text-indigo-600 hover:underline">
-                Directory →
+                {isId ? "Direktori →" : "Directory →"}
               </Link>
             </div>
             <div className="space-y-2.5">
@@ -643,30 +721,34 @@ export default function ExecutiveDashboardPage() {
             </div>
           </div>
 
-          {/* Top Psychometric + Announcements */}
+          {/* Top Psychometric (RBAC Guarded) + Announcements */}
           <div className="bg-white dark:bg-[#111827] border border-slate-200/90 dark:border-slate-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-extrabold flex items-center gap-2">
-                <Award className="w-4 h-4 text-amber-500" />
-                {isId ? "Top Skor Psikotes" : "Top Psychometric Talent"}
-              </h2>
-              <Link href="/assessments" className="text-xs font-semibold text-indigo-600 hover:underline">
-                All →
-              </Link>
-            </div>
-            {reports.slice(0, 2).map((rep) => (
-              <div key={rep.id} className="flex items-center justify-between gap-2 text-xs py-1">
-                <div className="min-w-0">
-                  <div className="font-bold truncate">{rep.candidateName}</div>
-                  <div className="text-[11px] text-slate-500 truncate">{rep.targetRole}</div>
+            {hasPermission("assessments:manage") && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-extrabold flex items-center gap-2">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    {isId ? "Skor Psikotes Tertinggi" : "Top Psychometric Talent"}
+                  </h2>
+                  <Link href="/assessments" className="text-xs font-semibold text-indigo-600 hover:underline">
+                    {isId ? "Semua →" : "All →"}
+                  </Link>
                 </div>
-                <span className="badge-success px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0">
-                  IQ {rep.estimatedIq}
-                </span>
-              </div>
-            ))}
+                {reports.slice(0, 2).map((rep) => (
+                  <div key={rep.id} className="flex items-center justify-between gap-2 text-xs py-1">
+                    <div className="min-w-0">
+                      <div className="font-bold truncate">{rep.candidateName}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{rep.targetRole}</div>
+                    </div>
+                    <span className="badge-success px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0">
+                      IQ {rep.estimatedIq}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
             {announcements[0] && (
-              <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-1">
+              <div className={`${hasPermission("assessments:manage") ? "pt-3 border-t border-slate-200/80 dark:border-slate-800" : ""} space-y-1`}>
                 <div className="text-[11px] font-bold flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
                   <Megaphone className="w-3.5 h-3.5" /> {announcements[0].title}
                 </div>

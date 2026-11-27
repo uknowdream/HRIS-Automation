@@ -1,10 +1,12 @@
 import crypto from "crypto";
-import type { ActiveRole } from "@/types/hris";
+import type { ActiveRole, Currency } from "@/types/hris";
 
 const SESSION_SECRET =
   process.env.AETHER_SIGNING_SECRET || "aetherhr-v5-enterprise-session-hmac-secret-2026";
 
 export const SESSION_COOKIE_NAME = "aether_session";
+export const ACCOUNTS_COOKIE_NAME = "aether_accounts";
+export const DEMO_MFA_CODE = "482910";
 
 export interface AuthUserSession {
   id: string;
@@ -12,10 +14,22 @@ export interface AuthUserSession {
   email: string;
   role: ActiveRole;
   companyName: string;
+  defaultCurrency?: Currency;
   avatarInitials: string;
   mfaVerified: boolean;
   issuedAt: number;
   expiresAt: number;
+}
+
+export interface StoredUserAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: ActiveRole;
+  companyName: string;
+  defaultCurrency: Currency;
+  avatarInitials: string;
+  passwordHash: string;
 }
 
 // ==========================================
@@ -49,7 +63,7 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 // ==========================================
-// 3. SIGNED STATELESS SESSION COOKIES (HMAC-SHA256)
+// 3. SIGNED STATELESS SESSION & ACCOUNT VAULT COOKIES
 // ==========================================
 function b64u(input: string | Buffer): string {
   return Buffer.from(input)
@@ -65,13 +79,13 @@ function unb64u(input: string): string {
   return Buffer.from(s, "base64").toString("utf8");
 }
 
-export function signSessionToken(session: AuthUserSession): string {
-  const body = b64u(JSON.stringify(session));
+export function signPayload(payload: unknown): string {
+  const body = b64u(JSON.stringify(payload));
   const sig = crypto.createHmac("sha256", SESSION_SECRET).update(body).digest();
   return `${body}.${b64u(sig)}`;
 }
 
-export function verifySessionToken(token: string | undefined): AuthUserSession | null {
+export function verifySignedPayload<T>(token: string | undefined): T | null {
   if (!token) return null;
   try {
     const parts = token.split(".");
@@ -81,12 +95,25 @@ export function verifySessionToken(token: string | undefined): AuthUserSession |
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-    const parsed = JSON.parse(unb64u(body)) as AuthUserSession;
-    if (Date.now() > parsed.expiresAt) return null;
-    return parsed;
+    return JSON.parse(unb64u(body)) as T;
   } catch {
     return null;
   }
+}
+
+export function signSessionToken(session: AuthUserSession): string {
+  return signPayload(session);
+}
+
+export function verifySessionToken(token: string | undefined): AuthUserSession | null {
+  const parsed = verifySignedPayload<AuthUserSession>(token);
+  if (!parsed || Date.now() > parsed.expiresAt) return null;
+  return parsed;
+}
+
+export function parseAccountsVaultCookie(cookieVal: string | undefined): StoredUserAccount[] {
+  const parsed = verifySignedPayload<StoredUserAccount[]>(cookieVal);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 // ==========================================
@@ -146,29 +173,25 @@ export function isSsrfRestrictedUrl(rawUrl: string): { blocked: boolean; reason?
     host.startsWith("192.168.") ||
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
   ) {
-    return { blocked: true, reason: "Private, loopback, or cloud metadata addresses are blocked (OWASP A10 SSRF)" };
+    return {
+      blocked: true,
+      reason: "Private, loopback, or cloud metadata addresses are blocked (OWASP A10 SSRF)",
+    };
   }
   return { blocked: false };
 }
 
 // ==========================================
-// 6. DEMO ENTERPRISE ACCOUNTS (scrypt hashed)
+// 6. DEMO & REGISTERED ENTERPRISE ACCOUNTS
 // ==========================================
-export const DEMO_USERS: {
-  id: string;
-  name: string;
-  email: string;
-  role: ActiveRole;
-  companyName: string;
-  avatarInitials: string;
-  passwordHash: string;
-}[] = [
+export const DEMO_USERS: StoredUserAccount[] = [
   {
     id: "usr-super-00",
     name: "Alexander Wijaya",
     email: "alex.wijaya@aetherhr.global",
     role: "Super Admin",
     companyName: "AetherHR Global Technologies",
+    defaultCurrency: "IDR",
     avatarInitials: "AW",
     passwordHash: hashPassword("Super@2026!", "aether_salt_super"),
   },
@@ -178,6 +201,7 @@ export const DEMO_USERS: {
     email: "nadia.kusuma@aetherhr.global",
     role: "HR Admin",
     companyName: "AetherHR Global Technologies",
+    defaultCurrency: "IDR",
     avatarInitials: "NK",
     passwordHash: hashPassword("Admin@2026!", "aether_salt_admin"),
   },
@@ -187,6 +211,7 @@ export const DEMO_USERS: {
     email: "siti.rahmawati@aetherhr.global",
     role: "Finance & Payroll",
     companyName: "AetherHR Global Technologies",
+    defaultCurrency: "IDR",
     avatarInitials: "SR",
     passwordHash: hashPassword("Finance@2026!", "aether_salt_fin"),
   },
@@ -196,6 +221,7 @@ export const DEMO_USERS: {
     email: "marcus.tan@aetherhr.global",
     role: "Department Manager",
     companyName: "AetherHR Global Technologies",
+    defaultCurrency: "SGD",
     avatarInitials: "MT",
     passwordHash: hashPassword("Manager@2026!", "aether_salt_mgr"),
   },
@@ -205,7 +231,27 @@ export const DEMO_USERS: {
     email: "raka.pradipta@aetherhr.global",
     role: "Employee",
     companyName: "AetherHR Global Technologies",
+    defaultCurrency: "IDR",
     avatarInitials: "RP",
     passwordHash: hashPassword("Employee@2026!", "aether_salt_emp"),
   },
 ];
+
+// Process-level cache paired with signed HttpOnly cookie fallback for serverless persistence
+const runtimeRegisteredMap = new Map<string, StoredUserAccount>();
+
+export function registerAccountInMemory(acc: StoredUserAccount): void {
+  runtimeRegisteredMap.set(acc.email.toLowerCase(), acc);
+}
+
+export function findEnterpriseAccount(
+  email: string,
+  cookieVault: StoredUserAccount[] = []
+): StoredUserAccount | undefined {
+  const clean = email.trim().toLowerCase();
+  const fromVault = cookieVault.find((u) => u.email.toLowerCase() === clean);
+  if (fromVault) return fromVault;
+  const fromMem = runtimeRegisteredMap.get(clean);
+  if (fromMem) return fromMem;
+  return DEMO_USERS.find((u) => u.email.toLowerCase() === clean);
+}
